@@ -705,6 +705,192 @@ def plot_team_gpu_waste_analysis(all_df):
     return fig
 
 
+def plot_team_gpu_breakdown_table(all_df):
+    """
+    Detailed table: Team × GPU Type × Workload Type × Cloud
+    Shows WHO uses WHAT, HOW MUCH, and WHERE
+    """
+    # Aggregate GPU hours (simulate 30-day total)
+    # GPU hours = total_gpus × allocated % × 24 hours × 30 days
+    all_df_copy = all_df.copy()
+    all_df_copy["gpu_hours_30d"] = (
+        all_df_copy["total_gpus"] * 
+        (all_df_copy["used_pct"] / 100) * 
+        24 * 30
+    )
+    
+    summary = all_df_copy.groupby(["team", "gpu_type", "workload_type", "cloud"]).agg({
+        "gpu_hours_30d": "sum",
+        "utilization_pct": "mean",
+        "total_gpus": "sum"
+    }).reset_index()
+    
+    summary.columns = ["Team", "GPU Type", "Workload Type", "Cloud", "GPU Hours (30d)", "Avg Utilization %", "Total GPUs"]
+    summary["GPU Hours (30d)"] = summary["GPU Hours (30d)"].round(0).astype(int)
+    summary["Avg Utilization %"] = summary["Avg Utilization %"].round(1)
+    
+    # Sort by GPU hours descending
+    summary = summary.sort_values("GPU Hours (30d)", ascending=False)
+    
+    return summary
+
+
+def plot_sankey_team_gpu_flow(all_df):
+    """
+    Sankey diagram: Team → GPU Type → Workload Type → Cloud
+    Shows flow of GPU usage
+    """
+    # Calculate GPU hours
+    all_df_copy = all_df.copy()
+    all_df_copy["gpu_hours"] = (
+        all_df_copy["total_gpus"] * 
+        (all_df_copy["used_pct"] / 100) * 
+        24 * 30
+    )
+    
+    # Aggregate
+    agg = all_df_copy.groupby(["team", "gpu_type", "workload_type", "cloud"])["gpu_hours"].sum().reset_index()
+    
+    # Build Sankey
+    labels = []
+    label_dict = {}
+    
+    # Add all unique values
+    for col in ["team", "gpu_type", "workload_type", "cloud"]:
+        for val in agg[col].unique():
+            if val not in label_dict:
+                label_dict[val] = len(labels)
+                labels.append(val)
+    
+    # Create links
+    source = []
+    target = []
+    value = []
+    
+    # Team → GPU Type
+    for _, row in agg.groupby(["team", "gpu_type"])["gpu_hours"].sum().reset_index().iterrows():
+        source.append(label_dict[row["team"]])
+        target.append(label_dict[row["gpu_type"]])
+        value.append(row["gpu_hours"])
+    
+    # GPU Type → Workload Type
+    for _, row in agg.groupby(["gpu_type", "workload_type"])["gpu_hours"].sum().reset_index().iterrows():
+        source.append(label_dict[row["gpu_type"]])
+        target.append(label_dict[row["workload_type"]])
+        value.append(row["gpu_hours"])
+    
+    # Workload Type → Cloud
+    for _, row in agg.groupby(["workload_type", "cloud"])["gpu_hours"].sum().reset_index().iterrows():
+        source.append(label_dict[row["workload_type"]])
+        target.append(label_dict[row["cloud"]])
+        value.append(row["gpu_hours"])
+    
+    fig = go.Figure(data=[go.Sankey(
+        node=dict(
+            pad=15,
+            thickness=20,
+            line=dict(color="white", width=0.5),
+            label=labels
+        ),
+        link=dict(
+            source=source,
+            target=target,
+            value=value
+        )
+    )])
+    
+    fig.update_layout(
+        title="<b>GPU Usage Flow: Team → GPU Type → Workload → Cloud</b>",
+        template=PLOTLY_TEMPLATE,
+        height=600,
+        title_font_size=18
+    )
+    
+    return fig
+
+
+def plot_gpu_hours_by_team_stacked(all_df):
+    """
+    Stacked bar: GPU Hours by Team
+    Split by GPU Type and Workload Type
+    """
+    # Calculate GPU hours
+    all_df_copy = all_df.copy()
+    all_df_copy["gpu_hours"] = (
+        all_df_copy["total_gpus"] * 
+        (all_df_copy["used_pct"] / 100) * 
+        24 * 30
+    )
+    
+    # Create combined label for stacking
+    all_df_copy["gpu_workload"] = all_df_copy["gpu_type"] + " (" + all_df_copy["workload_type"] + ")"
+    
+    agg = all_df_copy.groupby(["team", "gpu_workload"])["gpu_hours"].sum().reset_index()
+    
+    fig = px.bar(
+        agg,
+        x="team",
+        y="gpu_hours",
+        color="gpu_workload",
+        title="<b>GPU Hours by Team (30-Day Total)</b>",
+        labels={"gpu_hours": "GPU Hours", "team": "Team"},
+        template=PLOTLY_TEMPLATE,
+        text="gpu_hours"
+    )
+    
+    fig.update_traces(textposition="inside", texttemplate="%{text:.0f}")
+    fig.update_layout(
+        height=450,
+        title_font_size=18,
+        xaxis_tickangle=45,
+        legend=dict(
+            orientation="v",
+            yanchor="top",
+            y=1,
+            xanchor="left",
+            x=1.02,
+            title="GPU (Workload)"
+        )
+    )
+    
+    return fig
+
+
+def plot_team_cloud_workload_heatmap(all_df):
+    """
+    Heatmap: Team × Cloud, colored by workload type distribution
+    """
+    # Calculate GPU hours by team and cloud
+    all_df_copy = all_df.copy()
+    all_df_copy["gpu_hours"] = (
+        all_df_copy["total_gpus"] * 
+        (all_df_copy["used_pct"] / 100) * 
+        24 * 30
+    )
+    
+    pivot = all_df_copy.pivot_table(
+        index="team",
+        columns="cloud",
+        values="gpu_hours",
+        aggfunc="sum",
+        fill_value=0
+    )
+    
+    fig = px.imshow(
+        pivot,
+        title="<b>Team × Cloud GPU Hours (30-Day Total)</b>",
+        labels=dict(x="Cloud", y="Team", color="GPU Hours"),
+        template=PLOTLY_TEMPLATE,
+        color_continuous_scale="Blues",
+        aspect="auto",
+        text_auto=".0f"
+    )
+    
+    fig.update_layout(height=400, title_font_size=18)
+    
+    return fig
+
+
 def plot_team_efficiency_scatter(committed_df):
     """
     Graph 3: Team Efficiency - Allocated vs Utilization
@@ -1310,6 +1496,54 @@ def main():
         # Graph 3: Team Efficiency
         st.plotly_chart(
             plot_team_efficiency_scatter(filtered_committed_df),
+            use_container_width=True
+        )
+    
+    st.markdown("---")
+    
+    # ========================================================================
+    # SECTION 2: WHO USES WHAT - DETAILED BREAKDOWN
+    # ========================================================================
+    
+    st.header("👥 Who Uses What")
+    st.markdown("*Detailed breakdown: Team × GPU Type × Workload Type × Cloud*")
+    
+    st.markdown("")
+    
+    # Detailed table
+    st.subheader("📋 Complete Usage Breakdown")
+    breakdown_table = plot_team_gpu_breakdown_table(filtered_all_df)
+    st.dataframe(
+        breakdown_table,
+        use_container_width=True,
+        hide_index=True,
+        height=400
+    )
+    
+    st.markdown("")
+    
+    # Sankey flow diagram
+    st.subheader("🌊 GPU Usage Flow")
+    st.markdown("*Follow the flow: Team → GPU Type → Workload Type → Cloud*")
+    st.plotly_chart(
+        plot_sankey_team_gpu_flow(filtered_all_df),
+        use_container_width=True
+    )
+    
+    st.markdown("")
+    
+    # GPU Hours breakdown
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.plotly_chart(
+            plot_gpu_hours_by_team_stacked(filtered_all_df),
+            use_container_width=True
+        )
+    
+    with col2:
+        st.plotly_chart(
+            plot_team_cloud_workload_heatmap(filtered_all_df),
             use_container_width=True
         )
     

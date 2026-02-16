@@ -20,6 +20,12 @@ This is a **leadership-ready** observability dashboard that provides:
 - **30-Day Efficiency Trend** (Used vs Utilization)
 - **Team Efficiency Scatter** (allocation vs actual usage)
 
+### 👥 Section 2: Who Uses What - Detailed Breakdown
+- **Complete Usage Table:** Team × GPU Type × Workload Type × Cloud × GPU Hours
+- **Sankey Flow Diagram:** Visual flow from Team → GPU → Workload → Cloud
+- **GPU Hours by Team:** Stacked bar showing GPU type and workload breakdown
+- **Team × Cloud Heatmap:** Where each team's GPUs are located
+
 ### ⚡ Section 3: Capacity Consumption & Efficiency
 - **Team efficiency trends** across all GPU types
 - **Per-GPU-type analysis** with tabs (L4, T4, A100-40GB, A100-80GB, H100, H200, B200)
