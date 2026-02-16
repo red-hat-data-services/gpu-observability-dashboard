@@ -1709,59 +1709,59 @@ def main():
     st.markdown("")
     
     # Side by side: Table and Daily Usage Charts
-    col1, col2 = st.columns([1, 1])
+    col_left, col_right = st.columns([1, 1])
     
-    with col1:
+    with col_left:
         # Detailed table with filters
         st.subheader("📋 Complete Usage Breakdown")
-    
-    # Table-specific filters
-    with st.expander("🔍 Table Filters", expanded=False):
-        col1, col2, col3, col4 = st.columns(4)
         
-        # Get full breakdown table first
-        full_breakdown_table = plot_team_gpu_breakdown_table(filtered_all_df)
+        # Table-specific filters
+        with st.expander("🔍 Table Filters", expanded=False):
+            fcol1, fcol2, fcol3, fcol4 = st.columns(4)
+            
+            # Get full breakdown table first
+            full_breakdown_table = plot_team_gpu_breakdown_table(filtered_all_df)
+            
+            with fcol1:
+                table_teams = st.multiselect(
+                    "Filter by Team",
+                    options=sorted(full_breakdown_table["Team"].unique()),
+                    default=sorted(full_breakdown_table["Team"].unique()),
+                    key="table_team_filter"
+                )
+            
+            with fcol2:
+                table_gpu_types = st.multiselect(
+                    "Filter by GPU Type",
+                    options=sorted(full_breakdown_table["GPU Type"].unique()),
+                    default=sorted(full_breakdown_table["GPU Type"].unique()),
+                    key="table_gpu_filter"
+                )
+            
+            with fcol3:
+                table_workload_types = st.multiselect(
+                    "Filter by Workload",
+                    options=sorted(full_breakdown_table["Workload Type"].unique()),
+                    default=sorted(full_breakdown_table["Workload Type"].unique()),
+                    key="table_workload_filter"
+                )
+            
+            with fcol4:
+                table_clouds = st.multiselect(
+                    "Filter by Cloud",
+                    options=sorted(full_breakdown_table["Cloud"].unique()),
+                    default=sorted(full_breakdown_table["Cloud"].unique()),
+                    key="table_cloud_filter"
+                )
         
-        with col1:
-            table_teams = st.multiselect(
-                "Filter by Team",
-                options=sorted(full_breakdown_table["Team"].unique()),
-                default=sorted(full_breakdown_table["Team"].unique()),
-                key="table_team_filter"
-            )
+        # Apply table filters
+        filtered_breakdown = full_breakdown_table[
+            (full_breakdown_table["Team"].isin(table_teams)) &
+            (full_breakdown_table["GPU Type"].isin(table_gpu_types)) &
+            (full_breakdown_table["Workload Type"].isin(table_workload_types)) &
+            (full_breakdown_table["Cloud"].isin(table_clouds))
+        ]
         
-        with col2:
-            table_gpu_types = st.multiselect(
-                "Filter by GPU Type",
-                options=sorted(full_breakdown_table["GPU Type"].unique()),
-                default=sorted(full_breakdown_table["GPU Type"].unique()),
-                key="table_gpu_filter"
-            )
-        
-        with col3:
-            table_workload_types = st.multiselect(
-                "Filter by Workload",
-                options=sorted(full_breakdown_table["Workload Type"].unique()),
-                default=sorted(full_breakdown_table["Workload Type"].unique()),
-                key="table_workload_filter"
-            )
-        
-        with col4:
-            table_clouds = st.multiselect(
-                "Filter by Cloud",
-                options=sorted(full_breakdown_table["Cloud"].unique()),
-                default=sorted(full_breakdown_table["Cloud"].unique()),
-                key="table_cloud_filter"
-            )
-    
-    # Apply table filters
-    filtered_breakdown = full_breakdown_table[
-        (full_breakdown_table["Team"].isin(table_teams)) &
-        (full_breakdown_table["GPU Type"].isin(table_gpu_types)) &
-        (full_breakdown_table["Workload Type"].isin(table_workload_types)) &
-        (full_breakdown_table["Cloud"].isin(table_clouds))
-    ]
-    
         # Display count
         st.caption(f"📊 Showing {len(filtered_breakdown)} of {len(full_breakdown_table)} entries")
         
@@ -1773,7 +1773,7 @@ def main():
             height=700
         )
     
-    with col2:
+    with col_right:
         # Team GPU Hours Trend with nested tabs
         st.subheader("📈 Daily GPU Hours Trend")
         st.markdown("*30-day team usage over time*")
