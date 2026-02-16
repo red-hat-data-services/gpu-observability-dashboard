@@ -805,27 +805,38 @@ def plot_sunburst_team_gpu(all_df):
     return fig
 
 
-def plot_team_gpu_hours_trend(all_df, timeseries_df, gpu_type_filter=None):
+def plot_team_gpu_hours_trend(all_df, timeseries_df, gpu_type_filter=None, workload_filter=None):
     """
-    OPTION 3: Line Chart - GPU Hours over time by team
-    Shows 30-day trend (not just total)
+    Line Chart - GPU Hours over time by team
+    Shows 30-day trend with optional GPU type and workload type filters
     """
     teams = sorted(all_df["team"].unique())
     dates = sorted(timeseries_df["date"].unique())
     
     # Filter by GPU type if specified
+    filtered_df = all_df.copy()
+    
+    title_parts = []
+    
     if gpu_type_filter:
-        filtered_df = all_df[all_df["gpu_type"] == gpu_type_filter]
-        title_suffix = f" - {gpu_type_filter}"
+        filtered_df = filtered_df[filtered_df["gpu_type"] == gpu_type_filter]
+        title_parts.append(gpu_type_filter)
     else:
-        filtered_df = all_df
-        title_suffix = " - All GPU Types"
+        title_parts.append("All GPU Types")
+    
+    if workload_filter:
+        filtered_df = filtered_df[filtered_df["workload_type"] == workload_filter]
+        title_parts.append(workload_filter.capitalize())
+    else:
+        title_parts.append("All Workloads")
+    
+    title_suffix = " - " + " | ".join(title_parts)
     
     fig = go.Figure()
     
     # Create a line for each team
     for idx, team in enumerate(teams):
-        np.random.seed(200 + idx + (hash(gpu_type_filter) % 100 if gpu_type_filter else 0))
+        np.random.seed(200 + idx + (hash(str(gpu_type_filter) + str(workload_filter)) % 100))
         
         # Get team's average daily GPU hours
         team_data = filtered_df[filtered_df["team"] == team]
@@ -1763,42 +1774,55 @@ def main():
         )
     
     with col2:
-        # Daily team usage with Tabs per Cloud
-        st.subheader("📈 Daily GPU Usage by Team")
-        st.markdown("*30-day stacked area charts - Which teams drive GPU usage in each cloud*")
+        # Team GPU Hours Trend with nested tabs
+        st.subheader("📈 Daily GPU Hours Trend")
+        st.markdown("*30-day team usage over time*")
         
         st.markdown("")
         
         gpu_types = sorted(filtered_all_df["gpu_type"].unique())
-        clouds = sorted(filtered_all_df["cloud"].unique())
+        workload_types = ["All", "committed", "on-demand", "spot"]
         
-        # Create tabs for each cloud
-        cloud_tabs = st.tabs(clouds)
+        # Level 1 tabs: GPU Types
+        gpu_tab_labels = ["📊 All GPU Types"] + gpu_types
+        gpu_tabs = st.tabs(gpu_tab_labels)
         
-        for cloud_idx, cloud in enumerate(clouds):
-            with cloud_tabs[cloud_idx]:
+        # Tab 0: All GPU Types
+        with gpu_tabs[0]:
+            st.markdown("")
+            # Level 2 tabs: Workload Types
+            workload_tabs = st.tabs(workload_types)
+            
+            for w_idx, workload in enumerate(workload_types):
+                with workload_tabs[w_idx]:
+                    st.plotly_chart(
+                        plot_team_gpu_hours_trend(
+                            filtered_all_df, 
+                            timeseries_df, 
+                            gpu_type_filter=None,
+                            workload_filter=None if workload == "All" else workload
+                        ),
+                        use_container_width=True
+                    )
+        
+        # Individual GPU Type tabs
+        for gpu_idx, gpu_type in enumerate(gpu_types):
+            with gpu_tabs[gpu_idx + 1]:
                 st.markdown("")
+                # Level 2 tabs: Workload Types
+                workload_tabs = st.tabs(workload_types)
                 
-                # Display GPU types in grid (3 per row)
-                num_gpu_types = len(gpu_types)
-                for i in range(0, num_gpu_types, 3):
-                    cols = st.columns(3)
-                    
-                    for col_idx in range(3):
-                        gpu_idx = i + col_idx
-                        if gpu_idx < num_gpu_types:
-                            gpu_type = gpu_types[gpu_idx]
-                            with cols[col_idx]:
-                                chart = plot_daily_team_gpu_usage(
-                                    filtered_all_df,
-                                    timeseries_df,
-                                    gpu_type,
-                                    cloud
-                                )
-                                if chart:
-                                    st.plotly_chart(chart, use_container_width=True)
-                    
-                    st.markdown("")
+                for w_idx, workload in enumerate(workload_types):
+                    with workload_tabs[w_idx]:
+                        st.plotly_chart(
+                            plot_team_gpu_hours_trend(
+                                filtered_all_df,
+                                timeseries_df,
+                                gpu_type_filter=gpu_type,
+                                workload_filter=None if workload == "All" else workload
+                            ),
+                            use_container_width=True
+                        )
     
     st.markdown("---")
     st.markdown("")
