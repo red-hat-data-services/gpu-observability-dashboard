@@ -943,13 +943,6 @@ def plot_daily_team_gpu_usage(all_df, timeseries_df, gpu_type, cloud):
             hovertemplate=f"{team}: %{{y:.0f}} hrs<extra></extra>"
         ))
     
-    # Color coding for clouds
-    cloud_colors = {
-        "AWS": "#FF9900",
-        "GCP": "#34A853",
-        "IBM Cloud": "#0F62FE"
-    }
-    
     fig.update_layout(
         title=f"<b>{gpu_type}</b><br><sub>{cloud}</sub>",
         xaxis_title="",
@@ -967,9 +960,7 @@ def plot_daily_team_gpu_usage(all_df, timeseries_df, gpu_type, cloud):
             x=0.5,
             font=dict(size=9)
         ),
-        margin=dict(t=60, b=80),
-        plot_bgcolor=cloud_colors.get(cloud, "#1f1f1f"),
-        paper_bgcolor="rgba(0,0,0,0)"
+        margin=dict(t=60, b=80)
     )
     
     return fig
