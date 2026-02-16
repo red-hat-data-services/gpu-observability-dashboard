@@ -2041,43 +2041,42 @@ def main():
     # Display heatmaps based on filters
     if pattern_selected_teams and pattern_selected_gpu_types:
         
-        # Main heatmap: Hour × Day
-        st.subheader("📊 Hourly Usage Pattern")
-        st.plotly_chart(
-            plot_dynamic_usage_heatmap(
-                hourly_patterns_df,
-                pattern_selected_teams,
-                pattern_selected_gpu_types,
-                pattern_metric
-            ),
-            use_container_width=True,
-            key="s4_hourly_heatmap"
-        )
+        # Main row: Hourly Pattern and Weekly Summary side by side
+        col_hourly, col_weekly = st.columns([1, 1])
         
-        st.markdown("")
-        st.markdown("---")
-        st.markdown("")
+        with col_hourly:
+            st.subheader("📊 Hourly Usage Pattern")
+            st.plotly_chart(
+                plot_dynamic_usage_heatmap(
+                    hourly_patterns_df,
+                    pattern_selected_teams,
+                    pattern_selected_gpu_types,
+                    pattern_metric
+                ),
+                use_container_width=True,
+                key="s4_hourly_heatmap"
+            )
         
-        # Secondary heatmaps: Weekday patterns
-        st.subheader("📅 Weekly Summary Patterns")
-        
-        col1, col2 = st.columns(2)
-        
-        with col1:
+        with col_weekly:
+            st.subheader("📅 Weekly Summary Patterns")
+            
+            # Metrics × Weekday
             st.markdown("**Metrics × Weekday**")
             st.plotly_chart(
                 plot_metrics_by_weekday_heatmap(timeseries_df),
                 use_container_width=True,
                 key="s4_metrics_weekday"
             )
-        
-        with col2:
+            
+            st.markdown("")
+            
             # Filter committed data for team heatmap
             pattern_filtered_committed = filtered_all_df[
                 (filtered_all_df["workload_type"] == "committed") &
                 (filtered_all_df["team"].isin(pattern_selected_teams))
             ]
             
+            # Team × Weekday
             st.markdown("**Team × Weekday**")
             st.plotly_chart(
                 plot_team_by_weekday_heatmap(pattern_filtered_committed, timeseries_df),
