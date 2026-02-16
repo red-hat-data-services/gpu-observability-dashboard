@@ -1680,21 +1680,24 @@ def main():
         # Graph 1: Committed GPU Inventory
         st.plotly_chart(
             plot_committed_inventory_by_type_and_cloud(filtered_committed_df),
-            use_container_width=True
+            use_container_width=True,
+            key="s1_inventory"
         )
     
     with col2:
         # Graph 2: 30-Day Trend
         st.plotly_chart(
             plot_30day_used_vs_utilization_trend(timeseries_df),
-            use_container_width=True
+            use_container_width=True,
+            key="s1_trend"
         )
     
     with col3:
         # Graph 3: Team Efficiency
         st.plotly_chart(
             plot_team_efficiency_scatter(filtered_committed_df),
-            use_container_width=True
+            use_container_width=True,
+            key="s1_efficiency"
         )
     
     st.markdown("---")
@@ -1802,7 +1805,8 @@ def main():
                             gpu_type_filter=None,
                             workload_filter=None if workload == "All" else workload
                         ),
-                        use_container_width=True
+                        use_container_width=True,
+                        key=f"trend_all_gpu_{workload}_{w_idx}"
                     )
         
         # Individual GPU Type tabs
@@ -1821,7 +1825,8 @@ def main():
                                 gpu_type_filter=gpu_type,
                                 workload_filter=None if workload == "All" else workload
                             ),
-                            use_container_width=True
+                            use_container_width=True,
+                            key=f"trend_{gpu_type}_{workload}_{gpu_idx}_{w_idx}"
                         )
     
     st.markdown("---")
@@ -1841,7 +1846,8 @@ def main():
         st.markdown("*Click to drill: Team → GPU → Workload*")
         st.plotly_chart(
             plot_sunburst_team_gpu(filtered_all_df),
-            use_container_width=True
+            use_container_width=True,
+            key="s2_sunburst"
         )
     
     with col2:
@@ -1858,7 +1864,8 @@ def main():
         with trend_tabs[0]:
             st.plotly_chart(
                 plot_team_gpu_hours_trend(filtered_all_df, timeseries_df, gpu_type_filter=None),
-                use_container_width=True
+                use_container_width=True,
+                key="s2_breakdown_trend_all"
             )
         
         # Individual GPU Type tabs
@@ -1866,7 +1873,8 @@ def main():
             with trend_tabs[idx + 1]:
                 st.plotly_chart(
                     plot_team_gpu_hours_trend(filtered_all_df, timeseries_df, gpu_type_filter=gpu_type),
-                    use_container_width=True
+                    use_container_width=True,
+                    key=f"s2_breakdown_trend_{gpu_type}_{idx}"
                 )
     
     st.markdown("")
@@ -1920,14 +1928,16 @@ def main():
             st.markdown("**Used % (Committed Only)**")
             st.plotly_chart(
                 plot_used_trend_by_team_all_gpus(filtered_all_df, timeseries_df),
-                use_container_width=True
+                use_container_width=True,
+                key="s3_used_all_gpus"
             )
         
         with col2:
             st.markdown("**Utilization % (All Workload Types)**")
             st.plotly_chart(
                 plot_utilization_trend_by_team_all_gpus(filtered_all_df, timeseries_df),
-                use_container_width=True
+                use_container_width=True,
+                key="s3_util_all_gpus"
             )
     
     # Tabs 1+: Individual GPU Types
@@ -1945,7 +1955,8 @@ def main():
                         timeseries_df, 
                         gpu_type
                     ),
-                    use_container_width=True
+                    use_container_width=True,
+                    key=f"s3_used_{gpu_type}_{idx}"
                 )
             
             with col2:
@@ -1956,7 +1967,8 @@ def main():
                         timeseries_df, 
                         gpu_type
                     ),
-                    use_container_width=True
+                    use_container_width=True,
+                    key=f"s3_util_{gpu_type}_{idx}"
                 )
     
     st.markdown("---")
@@ -2038,7 +2050,8 @@ def main():
                 pattern_selected_gpu_types,
                 pattern_metric
             ),
-            use_container_width=True
+            use_container_width=True,
+            key="s4_hourly_heatmap"
         )
         
         st.markdown("")
@@ -2054,7 +2067,8 @@ def main():
             st.markdown("**Metrics × Weekday**")
             st.plotly_chart(
                 plot_metrics_by_weekday_heatmap(timeseries_df),
-                use_container_width=True
+                use_container_width=True,
+                key="s4_metrics_weekday"
             )
         
         with col2:
@@ -2067,7 +2081,8 @@ def main():
             st.markdown("**Team × Weekday**")
             st.plotly_chart(
                 plot_team_by_weekday_heatmap(pattern_filtered_committed, timeseries_df),
-                use_container_width=True
+                use_container_width=True,
+                key="s4_team_weekday"
             )
     else:
         st.warning("⚠️ Please select at least one team and one GPU type")
