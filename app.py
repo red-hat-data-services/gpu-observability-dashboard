@@ -1762,9 +1762,9 @@ def main():
         (full_breakdown_table["Cloud"].isin(table_clouds))
     ]
     
-    # Display count
-    st.caption(f"📊 Showing {len(filtered_breakdown)} of {len(full_breakdown_table)} entries")
-    
+        # Display count
+        st.caption(f"📊 Showing {len(filtered_breakdown)} of {len(full_breakdown_table)} entries")
+        
         # Display table
         st.dataframe(
             filtered_breakdown,
