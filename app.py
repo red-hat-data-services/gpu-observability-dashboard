@@ -795,12 +795,12 @@ def plot_sunburst_team_gpu(all_df):
         path=["team", "gpu_type", "workload_type"],
         values="gpu_hours",
         color="utilization_pct",
-        title="<b>Option 2: Sunburst - Team → GPU → Workload</b>",
+        title="<b>Sunburst Hierarchy</b>",
         color_continuous_scale="RdYlGn",
         template=PLOTLY_TEMPLATE
     )
     
-    fig.update_layout(height=500, title_font_size=18)
+    fig.update_layout(height=550, title_font_size=16)
     
     return fig
 
@@ -857,12 +857,12 @@ def plot_team_gpu_hours_trend(all_df, timeseries_df, gpu_type_filter=None):
         ))
     
     fig.update_layout(
-        title=f"<b>Daily GPU Hours by Team{title_suffix}</b>",
+        title=f"<b>Daily GPU Hours{title_suffix}</b>",
         xaxis_title="Date",
         yaxis_title="GPU Hours per Day",
         template=PLOTLY_TEMPLATE,
-        height=450,
-        title_font_size=18,
+        height=550,
+        title_font_size=16,
         hovermode="x unified",
         legend=dict(
             orientation="v",
@@ -1800,51 +1800,47 @@ def main():
     st.markdown("---")
     st.markdown("")
     
-    # Usage breakdown visualizations
+    # Usage breakdown visualizations - side by side
     st.subheader("📊 GPU Usage Breakdown")
     st.markdown("*Team × GPU Type × Workload Type analysis*")
     
     st.markdown("")
     
-    # Sunburst - Overview
-    st.markdown("#### 🌐 Overview: Sunburst Hierarchy")
-    st.markdown("*Center = Teams, Outer rings = GPU Types and Workloads. Click to drill down.*")
-    st.plotly_chart(
-        plot_sunburst_team_gpu(filtered_all_df),
-        use_container_width=True
-    )
+    col1, col2 = st.columns([1, 1])
     
-    st.markdown("")
-    st.markdown("---")
-    st.markdown("")
-    
-    # Team GPU Hours Trend with Tabs
-    st.markdown("#### 📈 Daily GPU Hours Trend by Team")
-    st.markdown("*30-day trend showing team GPU usage over time*")
-    
-    st.markdown("")
-    
-    # Create tabs: All + individual GPU types
-    gpu_types = sorted(filtered_all_df["gpu_type"].unique())
-    tab_labels = ["📊 All GPU Types"] + gpu_types
-    trend_tabs = st.tabs(tab_labels)
-    
-    # Tab 0: All GPU Types
-    with trend_tabs[0]:
-        st.markdown("")
+    with col1:
+        # Sunburst - Overview
+        st.markdown("##### 🌐 Hierarchy Overview")
+        st.markdown("*Click to drill: Team → GPU → Workload*")
         st.plotly_chart(
-            plot_team_gpu_hours_trend(filtered_all_df, timeseries_df, gpu_type_filter=None),
+            plot_sunburst_team_gpu(filtered_all_df),
             use_container_width=True
         )
     
-    # Individual GPU Type tabs
-    for idx, gpu_type in enumerate(gpu_types):
-        with trend_tabs[idx + 1]:
-            st.markdown("")
+    with col2:
+        # Team GPU Hours Trend with Tabs
+        st.markdown("##### 📈 Daily GPU Hours Trend")
+        st.markdown("*30-day team usage over time*")
+        
+        # Create tabs: All + individual GPU types
+        gpu_types = sorted(filtered_all_df["gpu_type"].unique())
+        tab_labels = ["All"] + gpu_types
+        trend_tabs = st.tabs(tab_labels)
+        
+        # Tab 0: All GPU Types
+        with trend_tabs[0]:
             st.plotly_chart(
-                plot_team_gpu_hours_trend(filtered_all_df, timeseries_df, gpu_type_filter=gpu_type),
+                plot_team_gpu_hours_trend(filtered_all_df, timeseries_df, gpu_type_filter=None),
                 use_container_width=True
             )
+        
+        # Individual GPU Type tabs
+        for idx, gpu_type in enumerate(gpu_types):
+            with trend_tabs[idx + 1]:
+                st.plotly_chart(
+                    plot_team_gpu_hours_trend(filtered_all_df, timeseries_df, gpu_type_filter=gpu_type),
+                    use_container_width=True
+                )
     
     st.markdown("")
     
