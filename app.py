@@ -164,6 +164,56 @@ def generate_30day_timeseries():
     return pd.DataFrame(data)
 
 
+@st.cache_data
+def generate_hourly_usage_patterns():
+    """
+    Simulate hourly usage patterns by team and GPU type.
+    In production: Query Prometheus for hourly GPU metrics.
+    """
+    np.random.seed(100)
+    
+    teams = ["ML Platform", "AI Research", "Data Science", "Engineering", "Customer Analytics"]
+    gpu_types = ["L4", "T4", "A100-40GB", "A100-80GB", "H100", "H200", "B200"]
+    
+    data = []
+    
+    for day_of_week in range(7):  # 0=Monday, 6=Sunday
+        for hour in range(24):
+            for team in teams:
+                for gpu_type in gpu_types:
+                    # Simulate hourly patterns
+                    # Work hours (9-17) have higher usage
+                    is_work_hours = 9 <= hour <= 17
+                    is_weekday = day_of_week < 5
+                    
+                    # Base GPU hours and utilization
+                    if is_weekday and is_work_hours:
+                        base_gpu_hours = np.random.uniform(80, 150)
+                        base_utilization = np.random.uniform(50, 75)
+                    elif is_weekday:
+                        base_gpu_hours = np.random.uniform(40, 80)
+                        base_utilization = np.random.uniform(30, 50)
+                    else:  # weekend
+                        base_gpu_hours = np.random.uniform(20, 60)
+                        base_utilization = np.random.uniform(20, 40)
+                    
+                    # Add team-specific variance
+                    team_factor = 1.0 + (hash(team) % 30) / 100
+                    gpu_hours = base_gpu_hours * team_factor
+                    utilization = base_utilization * team_factor
+                    
+                    data.append({
+                        "team": team,
+                        "gpu_type": gpu_type,
+                        "day_of_week": day_of_week,
+                        "hour": hour,
+                        "gpu_hours": gpu_hours,
+                        "utilization_pct": min(85, utilization)
+                    })
+    
+    return pd.DataFrame(data)
+
+
 # ============================================================================
 # VISUALIZATION FUNCTIONS
 # ============================================================================
@@ -870,6 +920,84 @@ def plot_metrics_by_weekday_heatmap(timeseries_df):
     return fig
 
 
+def plot_dynamic_usage_heatmap(hourly_df, selected_teams, selected_gpu_types, metric):
+    """
+    Dynamic heatmap: Hour × Day of Week
+    Aggregates based on team and GPU type selection
+    """
+    # Filter data based on selections
+    filtered = hourly_df[
+        (hourly_df["team"].isin(selected_teams)) &
+        (hourly_df["gpu_type"].isin(selected_gpu_types))
+    ]
+    
+    # Select metric column
+    metric_col = "gpu_hours" if metric == "GPU Hours" else "utilization_pct"
+    
+    # Aggregate to hour × day_of_week
+    pivot = filtered.pivot_table(
+        index="day_of_week",
+        columns="hour",
+        values=metric_col,
+        aggfunc="mean"
+    )
+    
+    # Day names
+    day_names = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+    pivot.index = [day_names[i] for i in pivot.index]
+    
+    # Generate dynamic title
+    if len(selected_teams) == 1:
+        team_label = selected_teams[0]
+    elif len(selected_teams) == len(hourly_df["team"].unique()):
+        team_label = "All Teams"
+    else:
+        team_label = f"{len(selected_teams)} Teams"
+    
+    if len(selected_gpu_types) == 1:
+        gpu_label = selected_gpu_types[0]
+    elif len(selected_gpu_types) == len(hourly_df["gpu_type"].unique()):
+        gpu_label = "All GPU Types"
+    else:
+        gpu_label = f"{len(selected_gpu_types)} GPU Types"
+    
+    # Final title
+    if team_label == "All Teams" and gpu_label == "All GPU Types":
+        title = f"<b>Organizational Usage Pattern (All Teams, All GPU Types)</b>"
+    elif team_label != "All Teams" and gpu_label != "All GPU Types":
+        title = f"<b>Team {team_label} – {gpu_label} Usage Pattern</b>"
+    elif team_label == "All Teams":
+        title = f"<b>All Teams – {gpu_label} Usage Pattern</b>"
+    else:
+        title = f"<b>{team_label} – All GPU Types Usage Pattern</b>"
+    
+    # Create heatmap
+    fig = go.Figure(data=go.Heatmap(
+        z=pivot.values,
+        x=list(range(24)),
+        y=pivot.index,
+        colorscale=[[0, "#001f3f"], [0.5, "#4682b4"], [1, "#7FFF00"]],  # Dark blue → Light blue → Green
+        hovertemplate="<b>%{y}</b><br>Hour %{x}: %{z:.1f}<extra></extra>",
+        colorbar=dict(title=metric)
+    ))
+    
+    fig.update_layout(
+        title=title,
+        xaxis_title="Hour of Day",
+        yaxis_title="Day of Week",
+        template=PLOTLY_TEMPLATE,
+        height=500,
+        title_font_size=18,
+        xaxis=dict(
+            tickmode="linear",
+            tick0=0,
+            dtick=2
+        )
+    )
+    
+    return fig
+
+
 def plot_team_by_weekday_heatmap(filtered_df, timeseries_df):
     """
     Graph 5: Team × Weekday Heatmap
@@ -931,6 +1059,7 @@ def main():
     # Load data
     all_gpu_df = generate_all_gpu_data()
     timeseries_df = generate_30day_timeseries()
+    hourly_patterns_df = generate_hourly_usage_patterns()
     
     # Separate committed for Section 1
     committed_df = all_gpu_df[all_gpu_df["workload_type"] == "committed"]
@@ -1111,9 +1240,89 @@ def main():
     
     st.markdown("---")
     
+    # ========================================================================
+    # SECTION 4: USAGE PATTERNS (DYNAMIC HEATMAP)
+    # ========================================================================
+    
+    st.header("🕐 Usage Patterns")
+    st.markdown("*Hour × Day behavioral analysis - When do teams use GPUs?*")
+    
+    st.markdown("")
+    
+    # Filter controls
+    col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        all_teams = sorted(hourly_patterns_df["team"].unique())
+        
+        # Select All checkbox
+        select_all_teams = st.checkbox("Select All Teams", value=True, key="select_all_teams")
+        
+        if select_all_teams:
+            pattern_selected_teams = st.multiselect(
+                "Team Selector",
+                options=all_teams,
+                default=all_teams,
+                key="pattern_teams"
+            )
+        else:
+            pattern_selected_teams = st.multiselect(
+                "Team Selector",
+                options=all_teams,
+                default=[all_teams[0]],
+                key="pattern_teams_custom"
+            )
+    
+    with col2:
+        all_gpu_types = sorted(hourly_patterns_df["gpu_type"].unique())
+        
+        # Select All checkbox
+        select_all_gpu_types = st.checkbox("Select All GPU Types", value=True, key="select_all_gpus")
+        
+        if select_all_gpu_types:
+            pattern_selected_gpu_types = st.multiselect(
+                "GPU Type Selector",
+                options=all_gpu_types,
+                default=all_gpu_types,
+                key="pattern_gpus"
+            )
+        else:
+            pattern_selected_gpu_types = st.multiselect(
+                "GPU Type Selector",
+                options=all_gpu_types,
+                default=[all_gpu_types[0]],
+                key="pattern_gpus_custom"
+            )
+    
+    with col3:
+        pattern_metric = st.selectbox(
+            "Metric Selector",
+            options=["GPU Hours", "Utilization %"],
+            index=0,
+            key="pattern_metric"
+        )
+    
+    st.markdown("")
+    
+    # Dynamic heatmap
+    if pattern_selected_teams and pattern_selected_gpu_types:
+        st.plotly_chart(
+            plot_dynamic_usage_heatmap(
+                hourly_patterns_df,
+                pattern_selected_teams,
+                pattern_selected_gpu_types,
+                pattern_metric
+            ),
+            use_container_width=True
+        )
+    else:
+        st.warning("⚠️ Please select at least one team and one GPU type")
+    
+    st.markdown("---")
+    
     # Footer
     st.caption("""
-    📊 **Executive GPU Dashboard** | Data: Committed GPUs Only | Source: Prometheus/Thanos (simulated)  
+    📊 **Executive GPU Dashboard** | Source: Prometheus/Thanos (simulated)  
     Focus: Capacity · Efficiency · Ownership · Time Patterns
     """)
 
