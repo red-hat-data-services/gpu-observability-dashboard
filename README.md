@@ -30,6 +30,12 @@ This is a **leadership-ready** observability dashboard that provides:
 - **Metrics × Weekday Heatmap** (Used, Utilization, Idle patterns)
 - **Team × Weekday Heatmap** (which teams work weekends)
 
+### 🕐 Section 4: Usage Patterns (Dynamic Heatmap)
+- **Hour × Day of Week** behavioral analysis
+- **Dynamic filters:** Team, GPU Type, Metric (GPU Hours / Utilization %)
+- **Single adaptive heatmap** that aggregates based on selection
+- **Pattern detection:** Peak hours, weekend usage, team behavior
+
 ## Key Insights
 
 ✅ **Allocation ≠ Utilization** - Shows gap between reserved and actual GPU usage  
