@@ -1060,19 +1060,19 @@ def plot_daily_team_gpu_usage(all_df, timeseries_df, gpu_type, cloud):
         xaxis_title="",
         yaxis_title="GPU Hours",
         template=PLOTLY_TEMPLATE,
-        height=300,
-        title_font_size=14,
+        height=250,
+        title_font_size=13,
         hovermode="x unified",
         showlegend=True,
         legend=dict(
             orientation="h",
             yanchor="bottom",
-            y=-0.3,
+            y=-0.35,
             xanchor="center",
             x=0.5,
-            font=dict(size=9)
+            font=dict(size=8)
         ),
-        margin=dict(t=60, b=80)
+        margin=dict(t=55, b=70)
     )
     
     return fig
@@ -1697,8 +1697,12 @@ def main():
     
     st.markdown("")
     
-    # Detailed table with filters
-    st.subheader("📋 Complete Usage Breakdown")
+    # Side by side: Table and Daily Usage Charts
+    col1, col2 = st.columns([1, 1])
+    
+    with col1:
+        # Detailed table with filters
+        st.subheader("📋 Complete Usage Breakdown")
     
     # Table-specific filters
     with st.expander("🔍 Table Filters", expanded=False):
@@ -1750,52 +1754,51 @@ def main():
     # Display count
     st.caption(f"📊 Showing {len(filtered_breakdown)} of {len(full_breakdown_table)} entries")
     
-    # Display table
-    st.dataframe(
-        filtered_breakdown,
-        use_container_width=True,
-        hide_index=True,
-        height=400
-    )
+        # Display table
+        st.dataframe(
+            filtered_breakdown,
+            use_container_width=True,
+            hide_index=True,
+            height=700
+        )
     
-    st.markdown("")
-    
-    # Daily team usage with Tabs per Cloud
-    st.subheader("📈 Daily GPU Usage by Team")
-    st.markdown("*30-day stacked area charts - Which teams drive GPU usage in each cloud*")
-    
-    st.markdown("")
-    
-    gpu_types = sorted(filtered_all_df["gpu_type"].unique())
-    clouds = sorted(filtered_all_df["cloud"].unique())
-    
-    # Create tabs for each cloud
-    cloud_tabs = st.tabs(clouds)
-    
-    for cloud_idx, cloud in enumerate(clouds):
-        with cloud_tabs[cloud_idx]:
-            st.markdown("")
-            
-            # Display GPU types in grid (3 per row)
-            num_gpu_types = len(gpu_types)
-            for i in range(0, num_gpu_types, 3):
-                cols = st.columns(3)
-                
-                for col_idx in range(3):
-                    gpu_idx = i + col_idx
-                    if gpu_idx < num_gpu_types:
-                        gpu_type = gpu_types[gpu_idx]
-                        with cols[col_idx]:
-                            chart = plot_daily_team_gpu_usage(
-                                filtered_all_df,
-                                timeseries_df,
-                                gpu_type,
-                                cloud
-                            )
-                            if chart:
-                                st.plotly_chart(chart, use_container_width=True)
-                
+    with col2:
+        # Daily team usage with Tabs per Cloud
+        st.subheader("📈 Daily GPU Usage by Team")
+        st.markdown("*30-day stacked area charts - Which teams drive GPU usage in each cloud*")
+        
+        st.markdown("")
+        
+        gpu_types = sorted(filtered_all_df["gpu_type"].unique())
+        clouds = sorted(filtered_all_df["cloud"].unique())
+        
+        # Create tabs for each cloud
+        cloud_tabs = st.tabs(clouds)
+        
+        for cloud_idx, cloud in enumerate(clouds):
+            with cloud_tabs[cloud_idx]:
                 st.markdown("")
+                
+                # Display GPU types in grid (3 per row)
+                num_gpu_types = len(gpu_types)
+                for i in range(0, num_gpu_types, 3):
+                    cols = st.columns(3)
+                    
+                    for col_idx in range(3):
+                        gpu_idx = i + col_idx
+                        if gpu_idx < num_gpu_types:
+                            gpu_type = gpu_types[gpu_idx]
+                            with cols[col_idx]:
+                                chart = plot_daily_team_gpu_usage(
+                                    filtered_all_df,
+                                    timeseries_df,
+                                    gpu_type,
+                                    cloud
+                                )
+                                if chart:
+                                    st.plotly_chart(chart, use_container_width=True)
+                    
+                    st.markdown("")
     
     st.markdown("---")
     st.markdown("")
