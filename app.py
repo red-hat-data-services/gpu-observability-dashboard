@@ -998,6 +998,181 @@ def plot_dynamic_usage_heatmap(hourly_df, selected_teams, selected_gpu_types, me
     return fig
 
 
+def plot_3d_surface_usage_pattern(hourly_df, selected_teams, selected_gpu_types, metric):
+    """
+    OPTION 1: 3D Surface Plot - Hour × Day × Metric
+    Interactive surface showing peaks and valleys of usage
+    """
+    # Filter data
+    filtered = hourly_df[
+        (hourly_df["team"].isin(selected_teams)) &
+        (hourly_df["gpu_type"].isin(selected_gpu_types))
+    ]
+    
+    # Select metric
+    metric_col = "gpu_hours" if metric == "GPU Hours" else "utilization_pct"
+    
+    # Aggregate to hour × day
+    pivot = filtered.pivot_table(
+        index="day_of_week",
+        columns="hour",
+        values=metric_col,
+        aggfunc="mean"
+    )
+    
+    day_names = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+    
+    # Create 3D surface
+    fig = go.Figure(data=[go.Surface(
+        z=pivot.values,
+        x=list(range(24)),
+        y=list(range(7)),
+        colorscale=[[0, "#001f3f"], [0.5, "#4682b4"], [1, "#7FFF00"]],
+        hovertemplate="<b>%{text}</b><br>Hour: %{x}<br>" + metric + ": %{z:.1f}<extra></extra>",
+        text=[[day_names[i] for _ in range(24)] for i in range(7)],
+        colorbar=dict(title=metric)
+    )])
+    
+    fig.update_layout(
+        title=f"<b>3D Surface: {metric} Pattern</b>",
+        scene=dict(
+            xaxis_title="Hour of Day",
+            yaxis=dict(
+                title="Day of Week",
+                tickmode="array",
+                tickvals=list(range(7)),
+                ticktext=day_names
+            ),
+            zaxis_title=metric
+        ),
+        template=PLOTLY_TEMPLATE,
+        height=600,
+        title_font_size=18
+    )
+    
+    return fig
+
+
+def plot_3d_scatter_bubbles(hourly_df, selected_teams, selected_gpu_types):
+    """
+    OPTION 2: 3D Scatter with Bubbles
+    Each point = hour × day × team, size = GPU hours, color = team
+    """
+    # Filter data
+    filtered = hourly_df[
+        (hourly_df["team"].isin(selected_teams)) &
+        (hourly_df["gpu_type"].isin(selected_gpu_types))
+    ]
+    
+    # Sample data (too many points otherwise)
+    sampled = filtered.groupby(["team", "day_of_week", "hour"]).agg({
+        "gpu_hours": "mean",
+        "utilization_pct": "mean"
+    }).reset_index()
+    
+    day_names = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+    sampled["day_name"] = sampled["day_of_week"].apply(lambda x: day_names[x])
+    
+    fig = px.scatter_3d(
+        sampled,
+        x="hour",
+        y="day_of_week",
+        z="utilization_pct",
+        size="gpu_hours",
+        color="team",
+        hover_data=["day_name"],
+        title="<b>3D Scatter: Hour × Day × Utilization</b>",
+        labels={
+            "hour": "Hour of Day",
+            "day_of_week": "Day of Week",
+            "utilization_pct": "Utilization %",
+            "gpu_hours": "GPU Hours"
+        },
+        template=PLOTLY_TEMPLATE,
+        size_max=15
+    )
+    
+    fig.update_layout(
+        height=600,
+        title_font_size=18,
+        scene=dict(
+            xaxis_title="Hour of Day",
+            yaxis=dict(
+                title="Day of Week",
+                tickmode="array",
+                tickvals=list(range(7)),
+                ticktext=day_names
+            ),
+            zaxis_title="Utilization %"
+        )
+    )
+    
+    return fig
+
+
+def plot_3d_surfaces_per_team(hourly_df, selected_teams, selected_gpu_types, metric):
+    """
+    OPTION 3: Multiple 3D Surfaces (one per team)
+    Each team is a separate surface layer
+    """
+    # Filter by GPU type
+    filtered = hourly_df[
+        (hourly_df["team"].isin(selected_teams)) &
+        (hourly_df["gpu_type"].isin(selected_gpu_types))
+    ]
+    
+    metric_col = "gpu_hours" if metric == "GPU Hours" else "utilization_pct"
+    
+    fig = go.Figure()
+    
+    # Create a surface for each team
+    for idx, team in enumerate(selected_teams):
+        team_data = filtered[filtered["team"] == team]
+        
+        pivot = team_data.pivot_table(
+            index="day_of_week",
+            columns="hour",
+            values=metric_col,
+            aggfunc="mean"
+        )
+        
+        if pivot.empty:
+            continue
+        
+        # Add team surface with slight offset
+        fig.add_trace(go.Surface(
+            z=pivot.values + (idx * 5),  # Slight offset per team
+            x=list(range(24)),
+            y=list(range(7)),
+            name=team,
+            showscale=(idx == 0),
+            colorscale=[[0, "#001f3f"], [0.5, "#4682b4"], [1, "#7FFF00"]],
+            opacity=0.8,
+            hovertemplate=f"<b>{team}</b><br>Hour: %{{x}}<br>Day: %{{y}}<br>" + metric + ": %{z:.1f}<extra></extra>"
+        ))
+    
+    day_names = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+    
+    fig.update_layout(
+        title=f"<b>3D Multi-Surface: {metric} by Team</b>",
+        scene=dict(
+            xaxis_title="Hour of Day",
+            yaxis=dict(
+                title="Day of Week",
+                tickmode="array",
+                tickvals=list(range(7)),
+                ticktext=day_names
+            ),
+            zaxis_title=metric
+        ),
+        template=PLOTLY_TEMPLATE,
+        height=600,
+        title_font_size=18
+    )
+    
+    return fig
+
+
 def plot_team_by_weekday_heatmap(filtered_df, timeseries_df):
     """
     Graph 5: Team × Weekday Heatmap
@@ -1214,98 +1389,75 @@ def main():
     st.markdown("---")
     
     # ========================================================================
-    # SECTION 2: ORGANIZATIONAL TIME PATTERNS
+    # SECTION 4: USAGE PATTERNS & TIME ANALYSIS
     # ========================================================================
     
-    st.header("📅 Organizational Time Patterns")
-    st.markdown("*30-day average - Usage patterns across the week*")
+    st.header("🕐 Usage Patterns & Time Analysis")
+    st.markdown("*Behavioral patterns - When and how teams use GPUs*")
     
     st.markdown("")
     
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        # Graph 4: Metrics × Weekday Heatmap
-        st.plotly_chart(
-            plot_metrics_by_weekday_heatmap(timeseries_df),
-            use_container_width=True
-        )
-    
-    with col2:
-        # Graph 5: Team × Weekday Heatmap
-        st.plotly_chart(
-            plot_team_by_weekday_heatmap(filtered_committed_df, timeseries_df),
-            use_container_width=True
-        )
-    
-    st.markdown("---")
-    
-    # ========================================================================
-    # SECTION 4: USAGE PATTERNS (DYNAMIC HEATMAP)
-    # ========================================================================
-    
-    st.header("🕐 Usage Patterns")
-    st.markdown("*Hour × Day behavioral analysis - When do teams use GPUs?*")
-    
-    st.markdown("")
-    
-    # Filter controls
-    col1, col2, col3 = st.columns(3)
-    
-    with col1:
-        all_teams = sorted(hourly_patterns_df["team"].unique())
+    # Pattern filters - inherit from global but allow override
+    with st.container():
+        st.markdown("##### 🎛️ Pattern Filters")
+        st.caption("⚙️ Inherits from global filters above - refine selection below")
         
-        # Select All checkbox
-        select_all_teams = st.checkbox("Select All Teams", value=True, key="select_all_teams")
+        col1, col2, col3, col4 = st.columns([3, 3, 2, 1])
         
-        if select_all_teams:
+        with col1:
+            # Start from globally filtered teams
+            available_teams = sorted(filtered_all_df["team"].unique())
             pattern_selected_teams = st.multiselect(
-                "Team Selector",
-                options=all_teams,
-                default=all_teams,
-                key="pattern_teams"
+                "Focus Teams",
+                options=available_teams,
+                default=available_teams,
+                key="pattern_teams",
+                help="Refine team selection from global filters"
             )
-        else:
-            pattern_selected_teams = st.multiselect(
-                "Team Selector",
-                options=all_teams,
-                default=[all_teams[0]],
-                key="pattern_teams_custom"
-            )
-    
-    with col2:
-        all_gpu_types = sorted(hourly_patterns_df["gpu_type"].unique())
         
-        # Select All checkbox
-        select_all_gpu_types = st.checkbox("Select All GPU Types", value=True, key="select_all_gpus")
+        with col2:
+            # Start from globally filtered GPU types
+            available_gpu_types = sorted(filtered_all_df["gpu_type"].unique())
+            pattern_selected_gpu_types = st.multiselect(
+                "Focus GPU Types",
+                options=available_gpu_types,
+                default=available_gpu_types,
+                key="pattern_gpus",
+                help="Refine GPU type selection from global filters"
+            )
         
-        if select_all_gpu_types:
-            pattern_selected_gpu_types = st.multiselect(
-                "GPU Type Selector",
-                options=all_gpu_types,
-                default=all_gpu_types,
-                key="pattern_gpus"
+        with col3:
+            pattern_metric = st.selectbox(
+                "Metric",
+                options=["GPU Hours", "Utilization %"],
+                index=0,
+                key="pattern_metric"
             )
-        else:
-            pattern_selected_gpu_types = st.multiselect(
-                "GPU Type Selector",
-                options=all_gpu_types,
-                default=[all_gpu_types[0]],
-                key="pattern_gpus_custom"
-            )
-    
-    with col3:
-        pattern_metric = st.selectbox(
-            "Metric Selector",
-            options=["GPU Hours", "Utilization %"],
-            index=0,
-            key="pattern_metric"
-        )
+        
+        with col4:
+            st.markdown("")
+            st.markdown("")
+            if st.button("↻ Reset", key="reset_pattern_filters"):
+                st.rerun()
     
     st.markdown("")
     
-    # Dynamic heatmap
+    # Usage info
     if pattern_selected_teams and pattern_selected_gpu_types:
+        team_count = len(pattern_selected_teams)
+        total_teams = len(available_teams)
+        gpu_count = len(pattern_selected_gpu_types)
+        total_gpus = len(available_gpu_types)
+        
+        st.info(f"📊 **Viewing:** {team_count}/{total_teams} teams · {gpu_count}/{total_gpus} GPU types · Metric: {pattern_metric}")
+    
+    st.markdown("")
+    
+    # Display heatmaps based on filters
+    if pattern_selected_teams and pattern_selected_gpu_types:
+        
+        # Main heatmap: Hour × Day
+        st.subheader("📊 Hourly Usage Pattern")
         st.plotly_chart(
             plot_dynamic_usage_heatmap(
                 hourly_patterns_df,
@@ -1315,6 +1467,35 @@ def main():
             ),
             use_container_width=True
         )
+        
+        st.markdown("")
+        st.markdown("---")
+        st.markdown("")
+        
+        # Secondary heatmaps: Weekday patterns
+        st.subheader("📅 Weekly Summary Patterns")
+        
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.markdown("**Metrics × Weekday**")
+            st.plotly_chart(
+                plot_metrics_by_weekday_heatmap(timeseries_df),
+                use_container_width=True
+            )
+        
+        with col2:
+            # Filter committed data for team heatmap
+            pattern_filtered_committed = filtered_all_df[
+                (filtered_all_df["workload_type"] == "committed") &
+                (filtered_all_df["team"].isin(pattern_selected_teams))
+            ]
+            
+            st.markdown("**Team × Weekday**")
+            st.plotly_chart(
+                plot_team_by_weekday_heatmap(pattern_filtered_committed, timeseries_df),
+                use_container_width=True
+            )
     else:
         st.warning("⚠️ Please select at least one team and one GPU type")
     
