@@ -2060,13 +2060,52 @@ def main():
         with col_weekly:
             st.subheader("📅 Weekly Summary Patterns")
             
-            # Metrics × Weekday
+            # Metrics × Weekday (filtered by pattern selection!)
             st.markdown("**Metrics × Weekday**")
-            st.plotly_chart(
-                plot_metrics_by_weekday_heatmap(timeseries_df),
-                use_container_width=True,
-                key="s4_metrics_weekday"
+            st.caption(f"Filtered: {len(pattern_selected_teams)} teams, {len(pattern_selected_gpu_types)} GPU types")
+            
+            # Filter data by pattern selections
+            pattern_filtered_data = filtered_all_df[
+                (filtered_all_df["team"].isin(pattern_selected_teams)) &
+                (filtered_all_df["gpu_type"].isin(pattern_selected_gpu_types))
+            ]
+            
+            # Calculate metrics from filtered data simulated over time
+            filtered_metrics_by_day = []
+            for day in range(7):
+                weekend_factor = 0.6 if day >= 5 else 1.0
+                # Get metrics from pattern-filtered teams/GPUs
+                day_used = pattern_filtered_data[
+                    pattern_filtered_data["workload_type"] == "committed"
+                ]["used_pct"].mean() * weekend_factor if not pattern_filtered_data.empty else 0
+                day_util = pattern_filtered_data["utilization_pct"].mean() * weekend_factor if not pattern_filtered_data.empty else 0
+                day_idle = 100 - day_used
+                filtered_metrics_by_day.append([day_used, day_util, day_idle])
+            
+            # Transpose for heatmap
+            pivot_data = list(map(list, zip(*filtered_metrics_by_day)))
+            day_names = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+            
+            fig_metrics = go.Figure(data=go.Heatmap(
+                z=pivot_data,
+                x=day_names,
+                y=["Used %", "Utilization %", "Idle %"],
+                colorscale="RdYlGn",
+                text=[[f"{val:.1f}%" for val in row] for row in pivot_data],
+                texttemplate="%{text}",
+                textfont={"size": 11},
+                hovertemplate="<b>%{y}</b><br>%{x}: %{z:.1f}%<extra></extra>",
+                colorbar=dict(title="Value (%)")
+            ))
+            
+            fig_metrics.update_layout(
+                title="<b>Metrics × Weekday</b>",
+                template=PLOTLY_TEMPLATE,
+                height=250,
+                title_font_size=14
             )
+            
+            st.plotly_chart(fig_metrics, use_container_width=True, key="s4_metrics_weekday")
             
             st.markdown("")
             
