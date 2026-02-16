@@ -805,9 +805,10 @@ def plot_sunburst_team_gpu(all_df):
     return fig
 
 
-def plot_grouped_bar_team_gpu(all_df):
+def plot_grouped_bar_team_gpu(all_df, gpu_type_filter=None):
     """
     OPTION 3: Grouped Bar Chart - Simple and clear
+    Can be filtered by GPU type
     """
     # Calculate GPU hours
     all_df_copy = all_df.copy()
@@ -817,36 +818,55 @@ def plot_grouped_bar_team_gpu(all_df):
         24 * 30
     )
     
+    # Filter by GPU type if specified
+    if gpu_type_filter:
+        all_df_copy = all_df_copy[all_df_copy["gpu_type"] == gpu_type_filter]
+        title_suffix = f" - {gpu_type_filter}"
+    else:
+        title_suffix = " - All GPU Types"
+    
     # Create combined label
     all_df_copy["gpu_workload"] = (
         all_df_copy["gpu_type"] + " (" + 
         all_df_copy["workload_type"] + ")"
     )
     
-    agg = all_df_copy.groupby(["team", "gpu_workload"])["gpu_hours"].sum().reset_index()
+    agg = all_df_copy.groupby(["team", "gpu_workload", "workload_type"])["gpu_hours"].sum().reset_index()
+    
+    # Sort by total GPU hours per team
+    team_totals = agg.groupby("team")["gpu_hours"].sum().sort_values(ascending=False)
+    agg["team"] = pd.Categorical(agg["team"], categories=team_totals.index, ordered=True)
+    agg = agg.sort_values("team")
     
     fig = px.bar(
         agg,
         x="team",
         y="gpu_hours",
-        color="gpu_workload",
-        title="<b>Option 3: Grouped Bar - GPU Hours by Team</b>",
-        labels={"gpu_hours": "GPU Hours (30d)", "team": "Team"},
+        color="workload_type",
+        title=f"<b>GPU Hours by Team{title_suffix}</b>",
+        labels={"gpu_hours": "GPU Hours (30d)", "team": "Team", "workload_type": "Workload Type"},
         template=PLOTLY_TEMPLATE,
-        barmode="group"
+        barmode="group",
+        color_discrete_map={
+            "committed": "#1f77b4",
+            "on-demand": "#ff7f0e",
+            "spot": "#2ca02c"
+        },
+        text="gpu_hours"
     )
     
+    fig.update_traces(textposition="outside", texttemplate="%{text:.0f}")
     fig.update_layout(
-        height=500,
+        height=450,
         title_font_size=18,
         xaxis_tickangle=45,
         legend=dict(
-            orientation="v",
-            yanchor="top",
-            y=1,
-            xanchor="left",
-            x=1.02,
-            title="GPU (Workload)"
+            orientation="h",
+            yanchor="bottom",
+            y=1.02,
+            xanchor="right",
+            x=1,
+            title="Workload Type"
         )
     )
     
@@ -1777,25 +1797,15 @@ def main():
     st.markdown("---")
     st.markdown("")
     
-    # Usage breakdown visualizations - 4 options to choose from
-    st.subheader("📊 GPU Usage Breakdown Visualizations")
-    st.markdown("*Different ways to view: Team × GPU Type × Workload Type*")
+    # Usage breakdown visualizations
+    st.subheader("📊 GPU Usage Breakdown")
+    st.markdown("*Team × GPU Type × Workload Type analysis*")
     
     st.markdown("")
     
-    st.markdown("### Option 1: Treemap (Hierarchical)")
-    st.markdown("*Size = GPU Hours, Color = Utilization %. Click to drill down.*")
-    st.plotly_chart(
-        plot_treemap_team_gpu_breakdown(filtered_all_df),
-        use_container_width=True
-    )
-    
-    st.markdown("")
-    st.markdown("---")
-    st.markdown("")
-    
-    st.markdown("### Option 2: Sunburst (Circular)")
-    st.markdown("*Center = Teams, Outer rings = GPU Types and Workloads*")
+    # Sunburst - Overview
+    st.markdown("#### 🌐 Overview: Sunburst Hierarchy")
+    st.markdown("*Center = Teams, Outer rings = GPU Types and Workloads. Click to drill down.*")
     st.plotly_chart(
         plot_sunburst_team_gpu(filtered_all_df),
         use_container_width=True
@@ -1805,23 +1815,33 @@ def main():
     st.markdown("---")
     st.markdown("")
     
-    st.markdown("### Option 3: Grouped Bar Chart (Simple)")
-    st.markdown("*Straightforward comparison - easy to read*")
-    st.plotly_chart(
-        plot_grouped_bar_team_gpu(filtered_all_df),
-        use_container_width=True
-    )
+    # Grouped Bar with Tabs
+    st.markdown("#### 📊 Team Comparison by GPU Type")
+    st.markdown("*GPU Hours by team and workload type*")
     
     st.markdown("")
-    st.markdown("---")
-    st.markdown("")
     
-    st.markdown("### Option 4: Heatmap Matrix")
-    st.markdown("*Team × GPU+Workload grid - scan all at once*")
-    st.plotly_chart(
-        plot_heatmap_team_gpu_matrix(filtered_all_df),
-        use_container_width=True
-    )
+    # Create tabs: All + individual GPU types
+    gpu_types = sorted(filtered_all_df["gpu_type"].unique())
+    tab_labels = ["📊 All GPU Types"] + gpu_types
+    bar_tabs = st.tabs(tab_labels)
+    
+    # Tab 0: All GPU Types
+    with bar_tabs[0]:
+        st.markdown("")
+        st.plotly_chart(
+            plot_grouped_bar_team_gpu(filtered_all_df, gpu_type_filter=None),
+            use_container_width=True
+        )
+    
+    # Individual GPU Type tabs
+    for idx, gpu_type in enumerate(gpu_types):
+        with bar_tabs[idx + 1]:
+            st.markdown("")
+            st.plotly_chart(
+                plot_grouped_bar_team_gpu(filtered_all_df, gpu_type_filter=gpu_type),
+                use_container_width=True
+            )
     
     st.markdown("")
     
