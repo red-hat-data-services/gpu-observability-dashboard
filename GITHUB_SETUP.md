@@ -14,7 +14,7 @@
 After creating the repo, run these commands:
 
 ```bash
-cd /Users/abadli/Projects/gpu-observability-dashboard
+cd gpu-observability-dashboard
 
 # Add GitHub remote (replace YOUR_USERNAME with your GitHub username)
 git remote add origin https://github.com/YOUR_USERNAME/gpu-observability-dashboard.git
