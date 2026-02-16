@@ -735,10 +735,10 @@ def plot_team_gpu_breakdown_table(all_df):
     return summary
 
 
-def plot_sankey_team_gpu_flow(all_df):
+def plot_treemap_team_gpu_breakdown(all_df):
     """
-    Sankey diagram: Team → GPU Type → Workload Type → Cloud
-    Shows flow of GPU usage
+    OPTION 1: Treemap - Hierarchical view
+    Size = GPU Hours, Color = Utilization %
     """
     # Calculate GPU hours
     all_df_copy = all_df.copy()
@@ -748,62 +748,151 @@ def plot_sankey_team_gpu_flow(all_df):
         24 * 30
     )
     
-    # Aggregate
-    agg = all_df_copy.groupby(["team", "gpu_type", "workload_type", "cloud"])["gpu_hours"].sum().reset_index()
+    # Create hierarchical data
+    agg = all_df_copy.groupby(["team", "gpu_type", "workload_type"]).agg({
+        "gpu_hours": "sum",
+        "utilization_pct": "mean"
+    }).reset_index()
     
-    # Build Sankey
-    labels = []
-    label_dict = {}
+    # Create labels for hover
+    agg["label"] = agg["gpu_type"] + "<br>" + agg["workload_type"]
     
-    # Add all unique values
-    for col in ["team", "gpu_type", "workload_type", "cloud"]:
-        for val in agg[col].unique():
-            if val not in label_dict:
-                label_dict[val] = len(labels)
-                labels.append(val)
+    fig = px.treemap(
+        agg,
+        path=["team", "gpu_type", "workload_type"],
+        values="gpu_hours",
+        color="utilization_pct",
+        title="<b>Option 1: Treemap - Team → GPU → Workload</b>",
+        labels={"gpu_hours": "GPU Hours", "utilization_pct": "Utilization %"},
+        color_continuous_scale="RdYlGn",
+        template=PLOTLY_TEMPLATE
+    )
     
-    # Create links
-    source = []
-    target = []
-    value = []
+    fig.update_layout(height=500, title_font_size=18)
     
-    # Team → GPU Type
-    for _, row in agg.groupby(["team", "gpu_type"])["gpu_hours"].sum().reset_index().iterrows():
-        source.append(label_dict[row["team"]])
-        target.append(label_dict[row["gpu_type"]])
-        value.append(row["gpu_hours"])
+    return fig
+
+
+def plot_sunburst_team_gpu(all_df):
+    """
+    OPTION 2: Sunburst - Circular hierarchy
+    """
+    # Calculate GPU hours
+    all_df_copy = all_df.copy()
+    all_df_copy["gpu_hours"] = (
+        all_df_copy["total_gpus"] * 
+        (all_df_copy["used_pct"] / 100) * 
+        24 * 30
+    )
     
-    # GPU Type → Workload Type
-    for _, row in agg.groupby(["gpu_type", "workload_type"])["gpu_hours"].sum().reset_index().iterrows():
-        source.append(label_dict[row["gpu_type"]])
-        target.append(label_dict[row["workload_type"]])
-        value.append(row["gpu_hours"])
+    agg = all_df_copy.groupby(["team", "gpu_type", "workload_type"]).agg({
+        "gpu_hours": "sum",
+        "utilization_pct": "mean"
+    }).reset_index()
     
-    # Workload Type → Cloud
-    for _, row in agg.groupby(["workload_type", "cloud"])["gpu_hours"].sum().reset_index().iterrows():
-        source.append(label_dict[row["workload_type"]])
-        target.append(label_dict[row["cloud"]])
-        value.append(row["gpu_hours"])
+    fig = px.sunburst(
+        agg,
+        path=["team", "gpu_type", "workload_type"],
+        values="gpu_hours",
+        color="utilization_pct",
+        title="<b>Option 2: Sunburst - Team → GPU → Workload</b>",
+        color_continuous_scale="RdYlGn",
+        template=PLOTLY_TEMPLATE
+    )
     
-    fig = go.Figure(data=[go.Sankey(
-        node=dict(
-            pad=15,
-            thickness=20,
-            line=dict(color="white", width=0.5),
-            label=labels
-        ),
-        link=dict(
-            source=source,
-            target=target,
-            value=value
-        )
-    )])
+    fig.update_layout(height=500, title_font_size=18)
+    
+    return fig
+
+
+def plot_grouped_bar_team_gpu(all_df):
+    """
+    OPTION 3: Grouped Bar Chart - Simple and clear
+    """
+    # Calculate GPU hours
+    all_df_copy = all_df.copy()
+    all_df_copy["gpu_hours"] = (
+        all_df_copy["total_gpus"] * 
+        (all_df_copy["used_pct"] / 100) * 
+        24 * 30
+    )
+    
+    # Create combined label
+    all_df_copy["gpu_workload"] = (
+        all_df_copy["gpu_type"] + " (" + 
+        all_df_copy["workload_type"] + ")"
+    )
+    
+    agg = all_df_copy.groupby(["team", "gpu_workload"])["gpu_hours"].sum().reset_index()
+    
+    fig = px.bar(
+        agg,
+        x="team",
+        y="gpu_hours",
+        color="gpu_workload",
+        title="<b>Option 3: Grouped Bar - GPU Hours by Team</b>",
+        labels={"gpu_hours": "GPU Hours (30d)", "team": "Team"},
+        template=PLOTLY_TEMPLATE,
+        barmode="group"
+    )
     
     fig.update_layout(
-        title="<b>GPU Usage Flow: Team → GPU Type → Workload → Cloud</b>",
+        height=500,
+        title_font_size=18,
+        xaxis_tickangle=45,
+        legend=dict(
+            orientation="v",
+            yanchor="top",
+            y=1,
+            xanchor="left",
+            x=1.02,
+            title="GPU (Workload)"
+        )
+    )
+    
+    return fig
+
+
+def plot_heatmap_team_gpu_matrix(all_df):
+    """
+    OPTION 4: Heatmap Matrix - Team × GPU+Workload
+    """
+    # Calculate GPU hours
+    all_df_copy = all_df.copy()
+    all_df_copy["gpu_hours"] = (
+        all_df_copy["total_gpus"] * 
+        (all_df_copy["used_pct"] / 100) * 
+        24 * 30
+    )
+    
+    # Create combined column
+    all_df_copy["gpu_workload"] = (
+        all_df_copy["gpu_type"] + "<br>" + 
+        all_df_copy["workload_type"]
+    )
+    
+    pivot = all_df_copy.pivot_table(
+        index="team",
+        columns="gpu_workload",
+        values="gpu_hours",
+        aggfunc="sum",
+        fill_value=0
+    )
+    
+    fig = px.imshow(
+        pivot,
+        title="<b>Option 4: Heatmap - Team × GPU+Workload Matrix</b>",
+        labels=dict(x="GPU Type (Workload)", y="Team", color="GPU Hours"),
         template=PLOTLY_TEMPLATE,
-        height=600,
-        title_font_size=18
+        color_continuous_scale="Blues",
+        aspect="auto",
+        text_auto=".0f"
+    )
+    
+    fig.update_layout(
+        height=500,
+        title_font_size=18,
+        xaxis=dict(tickangle=45)
     )
     
     return fig
@@ -1688,11 +1777,49 @@ def main():
     st.markdown("---")
     st.markdown("")
     
-    # Sankey flow diagram
-    st.subheader("🌊 GPU Usage Flow")
-    st.markdown("*Follow the flow: Team → GPU Type → Workload Type → Cloud*")
+    # Usage breakdown visualizations - 4 options to choose from
+    st.subheader("📊 GPU Usage Breakdown Visualizations")
+    st.markdown("*Different ways to view: Team × GPU Type × Workload Type*")
+    
+    st.markdown("")
+    
+    st.markdown("### Option 1: Treemap (Hierarchical)")
+    st.markdown("*Size = GPU Hours, Color = Utilization %. Click to drill down.*")
     st.plotly_chart(
-        plot_sankey_team_gpu_flow(filtered_all_df),
+        plot_treemap_team_gpu_breakdown(filtered_all_df),
+        use_container_width=True
+    )
+    
+    st.markdown("")
+    st.markdown("---")
+    st.markdown("")
+    
+    st.markdown("### Option 2: Sunburst (Circular)")
+    st.markdown("*Center = Teams, Outer rings = GPU Types and Workloads*")
+    st.plotly_chart(
+        plot_sunburst_team_gpu(filtered_all_df),
+        use_container_width=True
+    )
+    
+    st.markdown("")
+    st.markdown("---")
+    st.markdown("")
+    
+    st.markdown("### Option 3: Grouped Bar Chart (Simple)")
+    st.markdown("*Straightforward comparison - easy to read*")
+    st.plotly_chart(
+        plot_grouped_bar_team_gpu(filtered_all_df),
+        use_container_width=True
+    )
+    
+    st.markdown("")
+    st.markdown("---")
+    st.markdown("")
+    
+    st.markdown("### Option 4: Heatmap Matrix")
+    st.markdown("*Team × GPU+Workload grid - scan all at once*")
+    st.plotly_chart(
+        plot_heatmap_team_gpu_matrix(filtered_all_df),
         use_container_width=True
     )
     
