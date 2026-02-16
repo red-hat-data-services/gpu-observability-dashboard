@@ -1657,33 +1657,42 @@ def main():
     
     st.markdown("")
     
-    # Daily team usage - small multiples (3 per row)
-    st.subheader("📈 Daily GPU Usage by Team (Per GPU Type & Cloud)")
-    st.markdown("*30-day stacked area charts - Which teams drive GPU usage*")
+    # Daily team usage with Tabs per Cloud
+    st.subheader("📈 Daily GPU Usage by Team")
+    st.markdown("*30-day stacked area charts - Which teams drive GPU usage in each cloud*")
     
     st.markdown("")
     
     gpu_types = sorted(filtered_all_df["gpu_type"].unique())
     clouds = sorted(filtered_all_df["cloud"].unique())
     
-    # For each GPU type, show 3 clouds in a row
-    for gpu_type in gpu_types:
-        st.markdown(f"##### {gpu_type}")
-        
-        cols = st.columns(3)
-        
-        for idx, cloud in enumerate(clouds):
-            with cols[idx]:
-                chart = plot_daily_team_gpu_usage(
-                    filtered_all_df, 
-                    timeseries_df, 
-                    gpu_type, 
-                    cloud
-                )
-                if chart:
-                    st.plotly_chart(chart, use_container_width=True)
-        
-        st.markdown("")
+    # Create tabs for each cloud
+    cloud_tabs = st.tabs(clouds)
+    
+    for cloud_idx, cloud in enumerate(clouds):
+        with cloud_tabs[cloud_idx]:
+            st.markdown("")
+            
+            # Display GPU types in grid (3 per row)
+            num_gpu_types = len(gpu_types)
+            for i in range(0, num_gpu_types, 3):
+                cols = st.columns(3)
+                
+                for col_idx in range(3):
+                    gpu_idx = i + col_idx
+                    if gpu_idx < num_gpu_types:
+                        gpu_type = gpu_types[gpu_idx]
+                        with cols[col_idx]:
+                            chart = plot_daily_team_gpu_usage(
+                                filtered_all_df,
+                                timeseries_df,
+                                gpu_type,
+                                cloud
+                            )
+                            if chart:
+                                st.plotly_chart(chart, use_container_width=True)
+                
+                st.markdown("")
     
     st.markdown("---")
     st.markdown("")
