@@ -891,76 +891,85 @@ def plot_team_cloud_workload_heatmap(all_df):
     return fig
 
 
-def plot_top_team_by_gpu_per_cloud(all_df, timeseries_df, cloud):
+def plot_daily_team_gpu_usage(all_df, timeseries_df, gpu_type, cloud):
     """
-    Shows which team used the most GPU hours per GPU type over 30 days
-    Separate chart per cloud
+    Small chart: Daily GPU hours by team for specific GPU type and cloud
+    Shows which team uses the most each day
     """
-    # Filter by cloud
-    cloud_data = all_df[all_df["cloud"] == cloud]
+    # Filter by GPU type and cloud
+    filtered = all_df[
+        (all_df["gpu_type"] == gpu_type) &
+        (all_df["cloud"] == cloud)
+    ]
     
-    if cloud_data.empty:
+    if filtered.empty:
         return None
     
     dates = sorted(timeseries_df["date"].unique())
-    gpu_types = sorted(cloud_data["gpu_type"].unique())
-    teams = sorted(cloud_data["team"].unique())
+    teams = sorted(filtered["team"].unique())
     
     fig = go.Figure()
     
-    # For each GPU type, create a stacked area showing team contribution
-    for gpu_type in gpu_types:
-        gpu_data = cloud_data[cloud_data["gpu_type"] == gpu_type]
+    # For each team, generate daily GPU hours
+    for team in teams:
+        np.random.seed(hash(team + gpu_type + cloud) % 1000)
         
-        # For each team, generate daily GPU hours
-        for team in teams:
-            np.random.seed(hash(team + gpu_type + cloud) % 1000)
-            
-            team_gpu_data = gpu_data[gpu_data["team"] == team]
-            
-            if team_gpu_data.empty:
-                continue
-            
-            # Calculate average GPU hours for this team
-            avg_gpu_hours = (
-                team_gpu_data["total_gpus"].sum() * 
-                (team_gpu_data["used_pct"].mean() / 100) * 
-                24
-            )
-            
-            # Generate daily pattern
-            daily_hours = []
-            for date in dates:
-                day_of_week = pd.Timestamp(date).dayofweek
-                weekend_factor = 0.5 if day_of_week >= 5 else 1.0
-                hours = avg_gpu_hours * weekend_factor + np.random.normal(0, avg_gpu_hours * 0.1)
-                daily_hours.append(max(0, hours))
-            
-            fig.add_trace(go.Scatter(
-                x=dates,
-                y=daily_hours,
-                mode="lines",
-                name=f"{gpu_type} - {team}",
-                stackgroup=gpu_type,
-                hovertemplate=f"{team} ({gpu_type}): %{{y:.0f}} hours<extra></extra>"
-            ))
+        team_data = filtered[filtered["team"] == team]
+        
+        if team_data.empty:
+            continue
+        
+        # Calculate average GPU hours for this team
+        avg_gpu_hours = (
+            team_data["total_gpus"].sum() * 
+            (team_data["used_pct"].mean() / 100) * 
+            24
+        )
+        
+        # Generate daily pattern
+        daily_hours = []
+        for date in dates:
+            day_of_week = pd.Timestamp(date).dayofweek
+            weekend_factor = 0.5 if day_of_week >= 5 else 1.0
+            hours = avg_gpu_hours * weekend_factor + np.random.normal(0, avg_gpu_hours * 0.1)
+            daily_hours.append(max(0, hours))
+        
+        fig.add_trace(go.Scatter(
+            x=dates,
+            y=daily_hours,
+            mode="lines",
+            name=team,
+            stackgroup="one",
+            hovertemplate=f"{team}: %{{y:.0f}} hrs<extra></extra>"
+        ))
+    
+    # Color coding for clouds
+    cloud_colors = {
+        "AWS": "#FF9900",
+        "GCP": "#34A853",
+        "IBM Cloud": "#0F62FE"
+    }
     
     fig.update_layout(
-        title=f"<b>{cloud} - Daily GPU Hours by Team & GPU Type</b>",
-        xaxis_title="Date",
+        title=f"<b>{gpu_type}</b><br><sub>{cloud}</sub>",
+        xaxis_title="",
         yaxis_title="GPU Hours",
         template=PLOTLY_TEMPLATE,
-        height=450,
-        title_font_size=16,
+        height=300,
+        title_font_size=14,
         hovermode="x unified",
         showlegend=True,
         legend=dict(
-            orientation="v",
-            yanchor="top",
-            y=1,
-            xanchor="left",
-            x=1.02
-        )
+            orientation="h",
+            yanchor="bottom",
+            y=-0.3,
+            xanchor="center",
+            x=0.5,
+            font=dict(size=9)
+        ),
+        margin=dict(t=60, b=80),
+        plot_bgcolor=cloud_colors.get(cloud, "#1f1f1f"),
+        paper_bgcolor="rgba(0,0,0,0)"
     )
     
     return fig
@@ -1648,17 +1657,33 @@ def main():
     
     st.markdown("")
     
-    # Daily top team analysis per cloud
-    st.subheader("📈 Daily GPU Usage by Team & Type (Per Cloud)")
-    st.markdown("*30-day view: Which teams drive GPU usage in each cloud*")
+    # Daily team usage - small multiples (3 per row)
+    st.subheader("📈 Daily GPU Usage by Team (Per GPU Type & Cloud)")
+    st.markdown("*30-day stacked area charts - Which teams drive GPU usage*")
     
+    st.markdown("")
+    
+    gpu_types = sorted(filtered_all_df["gpu_type"].unique())
     clouds = sorted(filtered_all_df["cloud"].unique())
     
-    for cloud in clouds:
-        chart = plot_top_team_by_gpu_per_cloud(filtered_all_df, timeseries_df, cloud)
-        if chart:
-            st.plotly_chart(chart, use_container_width=True)
-            st.markdown("")
+    # For each GPU type, show 3 clouds in a row
+    for gpu_type in gpu_types:
+        st.markdown(f"##### {gpu_type}")
+        
+        cols = st.columns(3)
+        
+        for idx, cloud in enumerate(clouds):
+            with cols[idx]:
+                chart = plot_daily_team_gpu_usage(
+                    filtered_all_df, 
+                    timeseries_df, 
+                    gpu_type, 
+                    cloud
+                )
+                if chart:
+                    st.plotly_chart(chart, use_container_width=True)
+        
+        st.markdown("")
     
     st.markdown("---")
     st.markdown("")
