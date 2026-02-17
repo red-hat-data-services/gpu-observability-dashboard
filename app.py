@@ -705,6 +705,390 @@ def plot_team_gpu_waste_analysis(all_df):
     return fig
 
 
+def plot_team_gpu_breakdown_table(all_df):
+    """
+    Detailed table: Team × GPU Type × Workload Type × Cloud
+    Shows WHO uses WHAT, HOW MUCH, and WHERE
+    """
+    # Aggregate GPU hours (simulate 30-day total)
+    # GPU hours = total_gpus × allocated % × 24 hours × 30 days
+    all_df_copy = all_df.copy()
+    all_df_copy["gpu_hours_30d"] = (
+        all_df_copy["total_gpus"] * 
+        (all_df_copy["used_pct"] / 100) * 
+        24 * 30
+    )
+    
+    summary = all_df_copy.groupby(["team", "gpu_type", "workload_type", "cloud"]).agg({
+        "gpu_hours_30d": "sum",
+        "utilization_pct": "mean",
+        "total_gpus": "sum"
+    }).reset_index()
+    
+    summary.columns = ["Team", "GPU Type", "Workload Type", "Cloud", "GPU Hours (30d)", "Avg Utilization %", "Total GPUs"]
+    summary["GPU Hours (30d)"] = summary["GPU Hours (30d)"].round(0).astype(int)
+    summary["Avg Utilization %"] = summary["Avg Utilization %"].round(1)
+    
+    # Sort by GPU hours descending
+    summary = summary.sort_values("GPU Hours (30d)", ascending=False)
+    
+    return summary
+
+
+def plot_treemap_team_gpu_breakdown(all_df):
+    """
+    OPTION 1: Treemap - Hierarchical view
+    Size = GPU Hours, Color = Utilization %
+    """
+    # Calculate GPU hours
+    all_df_copy = all_df.copy()
+    all_df_copy["gpu_hours"] = (
+        all_df_copy["total_gpus"] * 
+        (all_df_copy["used_pct"] / 100) * 
+        24 * 30
+    )
+    
+    # Create hierarchical data
+    agg = all_df_copy.groupby(["team", "gpu_type", "workload_type"]).agg({
+        "gpu_hours": "sum",
+        "utilization_pct": "mean"
+    }).reset_index()
+    
+    # Create labels for hover
+    agg["label"] = agg["gpu_type"] + "<br>" + agg["workload_type"]
+    
+    fig = px.treemap(
+        agg,
+        path=["team", "gpu_type", "workload_type"],
+        values="gpu_hours",
+        color="utilization_pct",
+        title="<b>Option 1: Treemap - Team → GPU → Workload</b>",
+        labels={"gpu_hours": "GPU Hours", "utilization_pct": "Utilization %"},
+        color_continuous_scale="RdYlGn",
+        template=PLOTLY_TEMPLATE
+    )
+    
+    fig.update_layout(height=500, title_font_size=18)
+    
+    return fig
+
+
+def plot_sunburst_team_gpu(all_df):
+    """
+    OPTION 2: Sunburst - Circular hierarchy
+    """
+    # Calculate GPU hours
+    all_df_copy = all_df.copy()
+    all_df_copy["gpu_hours"] = (
+        all_df_copy["total_gpus"] * 
+        (all_df_copy["used_pct"] / 100) * 
+        24 * 30
+    )
+    
+    agg = all_df_copy.groupby(["team", "gpu_type", "workload_type"]).agg({
+        "gpu_hours": "sum",
+        "utilization_pct": "mean"
+    }).reset_index()
+    
+    fig = px.sunburst(
+        agg,
+        path=["team", "gpu_type", "workload_type"],
+        values="gpu_hours",
+        color="utilization_pct",
+        title="<b>Sunburst Hierarchy</b>",
+        color_continuous_scale="RdYlGn",
+        template=PLOTLY_TEMPLATE
+    )
+    
+    fig.update_layout(height=550, title_font_size=16)
+    
+    return fig
+
+
+def plot_team_gpu_hours_trend(all_df, timeseries_df, gpu_type_filter=None, workload_filter=None):
+    """
+    Line Chart - GPU Hours over time by team
+    Shows 30-day trend with optional GPU type and workload type filters
+    """
+    teams = sorted(all_df["team"].unique())
+    dates = sorted(timeseries_df["date"].unique())
+    
+    # Filter by GPU type if specified
+    filtered_df = all_df.copy()
+    
+    title_parts = []
+    
+    if gpu_type_filter:
+        filtered_df = filtered_df[filtered_df["gpu_type"] == gpu_type_filter]
+        title_parts.append(gpu_type_filter)
+    else:
+        title_parts.append("All GPU Types")
+    
+    if workload_filter:
+        filtered_df = filtered_df[filtered_df["workload_type"] == workload_filter]
+        title_parts.append(workload_filter.capitalize())
+    else:
+        title_parts.append("All Workloads")
+    
+    title_suffix = " - " + " | ".join(title_parts)
+    
+    fig = go.Figure()
+    
+    # Create a line for each team
+    for idx, team in enumerate(teams):
+        np.random.seed(200 + idx + (hash(str(gpu_type_filter) + str(workload_filter)) % 100))
+        
+        # Get team's average daily GPU hours
+        team_data = filtered_df[filtered_df["team"] == team]
+        
+        if team_data.empty:
+            continue
+        
+        avg_daily_hours = (
+            team_data["total_gpus"].sum() * 
+            (team_data["used_pct"].mean() / 100) * 
+            24
+        )
+        
+        # Generate daily trend
+        daily_hours = []
+        for date in dates:
+            day_of_week = pd.Timestamp(date).dayofweek
+            weekend_factor = 0.5 if day_of_week >= 5 else 1.0
+            hours = avg_daily_hours * weekend_factor + np.random.normal(0, avg_daily_hours * 0.15)
+            daily_hours.append(max(0, hours))
+        
+        fig.add_trace(go.Scatter(
+            x=dates,
+            y=daily_hours,
+            mode="lines",
+            name=team,
+            line=dict(width=2.5),
+            hovertemplate=f"{team}: %{{y:.0f}} hours<extra></extra>"
+        ))
+    
+    fig.update_layout(
+        title=f"<b>Daily GPU Hours{title_suffix}</b>",
+        xaxis_title="Date",
+        yaxis_title="GPU Hours per Day",
+        template=PLOTLY_TEMPLATE,
+        height=550,
+        title_font_size=16,
+        hovermode="x unified",
+        legend=dict(
+            orientation="v",
+            yanchor="middle",
+            y=0.5,
+            xanchor="left",
+            x=1.02
+        )
+    )
+    
+    return fig
+
+
+def plot_heatmap_team_gpu_matrix(all_df):
+    """
+    OPTION 4: Heatmap Matrix - Team × GPU+Workload
+    """
+    # Calculate GPU hours
+    all_df_copy = all_df.copy()
+    all_df_copy["gpu_hours"] = (
+        all_df_copy["total_gpus"] * 
+        (all_df_copy["used_pct"] / 100) * 
+        24 * 30
+    )
+    
+    # Create combined column
+    all_df_copy["gpu_workload"] = (
+        all_df_copy["gpu_type"] + "<br>" + 
+        all_df_copy["workload_type"]
+    )
+    
+    pivot = all_df_copy.pivot_table(
+        index="team",
+        columns="gpu_workload",
+        values="gpu_hours",
+        aggfunc="sum",
+        fill_value=0
+    )
+    
+    fig = px.imshow(
+        pivot,
+        title="<b>Option 4: Heatmap - Team × GPU+Workload Matrix</b>",
+        labels=dict(x="GPU Type (Workload)", y="Team", color="GPU Hours"),
+        template=PLOTLY_TEMPLATE,
+        color_continuous_scale="Blues",
+        aspect="auto",
+        text_auto=".0f"
+    )
+    
+    fig.update_layout(
+        height=500,
+        title_font_size=18,
+        xaxis=dict(tickangle=45)
+    )
+    
+    return fig
+
+
+def plot_gpu_hours_by_team_stacked(all_df):
+    """
+    Stacked bar: GPU Hours by Team
+    Split by GPU Type and Workload Type
+    """
+    # Calculate GPU hours
+    all_df_copy = all_df.copy()
+    all_df_copy["gpu_hours"] = (
+        all_df_copy["total_gpus"] * 
+        (all_df_copy["used_pct"] / 100) * 
+        24 * 30
+    )
+    
+    # Create combined label for stacking
+    all_df_copy["gpu_workload"] = all_df_copy["gpu_type"] + " (" + all_df_copy["workload_type"] + ")"
+    
+    agg = all_df_copy.groupby(["team", "gpu_workload"])["gpu_hours"].sum().reset_index()
+    
+    fig = px.bar(
+        agg,
+        x="team",
+        y="gpu_hours",
+        color="gpu_workload",
+        title="<b>GPU Hours by Team (30-Day Total)</b>",
+        labels={"gpu_hours": "GPU Hours", "team": "Team"},
+        template=PLOTLY_TEMPLATE,
+        text="gpu_hours"
+    )
+    
+    fig.update_traces(textposition="inside", texttemplate="%{text:.0f}")
+    fig.update_layout(
+        height=450,
+        title_font_size=18,
+        xaxis_tickangle=45,
+        legend=dict(
+            orientation="v",
+            yanchor="top",
+            y=1,
+            xanchor="left",
+            x=1.02,
+            title="GPU (Workload)"
+        )
+    )
+    
+    return fig
+
+
+def plot_team_cloud_workload_heatmap(all_df):
+    """
+    Heatmap: Team × Cloud, colored by workload type distribution
+    """
+    # Calculate GPU hours by team and cloud
+    all_df_copy = all_df.copy()
+    all_df_copy["gpu_hours"] = (
+        all_df_copy["total_gpus"] * 
+        (all_df_copy["used_pct"] / 100) * 
+        24 * 30
+    )
+    
+    pivot = all_df_copy.pivot_table(
+        index="team",
+        columns="cloud",
+        values="gpu_hours",
+        aggfunc="sum",
+        fill_value=0
+    )
+    
+    fig = px.imshow(
+        pivot,
+        title="<b>Team × Cloud GPU Hours (30-Day Total)</b>",
+        labels=dict(x="Cloud", y="Team", color="GPU Hours"),
+        template=PLOTLY_TEMPLATE,
+        color_continuous_scale="Blues",
+        aspect="auto",
+        text_auto=".0f"
+    )
+    
+    fig.update_layout(height=400, title_font_size=18)
+    
+    return fig
+
+
+def plot_daily_team_gpu_usage(all_df, timeseries_df, gpu_type, cloud):
+    """
+    Small chart: Daily GPU hours by team for specific GPU type and cloud
+    Shows which team uses the most each day
+    """
+    # Filter by GPU type and cloud
+    filtered = all_df[
+        (all_df["gpu_type"] == gpu_type) &
+        (all_df["cloud"] == cloud)
+    ]
+    
+    if filtered.empty:
+        return None
+    
+    dates = sorted(timeseries_df["date"].unique())
+    teams = sorted(filtered["team"].unique())
+    
+    fig = go.Figure()
+    
+    # For each team, generate daily GPU hours
+    for team in teams:
+        np.random.seed(hash(team + gpu_type + cloud) % 1000)
+        
+        team_data = filtered[filtered["team"] == team]
+        
+        if team_data.empty:
+            continue
+        
+        # Calculate average GPU hours for this team
+        avg_gpu_hours = (
+            team_data["total_gpus"].sum() * 
+            (team_data["used_pct"].mean() / 100) * 
+            24
+        )
+        
+        # Generate daily pattern
+        daily_hours = []
+        for date in dates:
+            day_of_week = pd.Timestamp(date).dayofweek
+            weekend_factor = 0.5 if day_of_week >= 5 else 1.0
+            hours = avg_gpu_hours * weekend_factor + np.random.normal(0, avg_gpu_hours * 0.1)
+            daily_hours.append(max(0, hours))
+        
+        fig.add_trace(go.Scatter(
+            x=dates,
+            y=daily_hours,
+            mode="lines",
+            name=team,
+            stackgroup="one",
+            hovertemplate=f"{team}: %{{y:.0f}} hrs<extra></extra>"
+        ))
+    
+    fig.update_layout(
+        title=f"<b>{gpu_type}</b><br><sub>{cloud}</sub>",
+        xaxis_title="",
+        yaxis_title="GPU Hours",
+        template=PLOTLY_TEMPLATE,
+        height=250,
+        title_font_size=13,
+        hovermode="x unified",
+        showlegend=True,
+        legend=dict(
+            orientation="h",
+            yanchor="bottom",
+            y=-0.35,
+            xanchor="center",
+            x=0.5,
+            font=dict(size=8)
+        ),
+        margin=dict(t=55, b=70)
+    )
+    
+    return fig
+
+
 def plot_team_efficiency_scatter(committed_df):
     """
     Graph 3: Team Efficiency - Allocated vs Utilization
@@ -1296,20 +1680,217 @@ def main():
         # Graph 1: Committed GPU Inventory
         st.plotly_chart(
             plot_committed_inventory_by_type_and_cloud(filtered_committed_df),
-            use_container_width=True
+            use_container_width=True,
+            key="s1_inventory"
         )
     
     with col2:
         # Graph 2: 30-Day Trend
         st.plotly_chart(
             plot_30day_used_vs_utilization_trend(timeseries_df),
-            use_container_width=True
+            use_container_width=True,
+            key="s1_trend"
         )
     
     with col3:
         # Graph 3: Team Efficiency
         st.plotly_chart(
             plot_team_efficiency_scatter(filtered_committed_df),
+            use_container_width=True,
+            key="s1_efficiency"
+        )
+    
+    st.markdown("---")
+    
+    # ========================================================================
+    # SECTION 2: WHO USES WHAT - DETAILED BREAKDOWN
+    # ========================================================================
+    
+    st.header("👥 Who Uses What")
+    st.markdown("*Detailed breakdown: Team × GPU Type × Workload Type × Cloud*")
+    
+    st.markdown("")
+    
+    # Side by side: Table and Daily Usage Charts
+    col_left, col_right = st.columns([1, 1])
+    
+    with col_left:
+        # Detailed table with filters
+        st.subheader("📋 Complete Usage Breakdown")
+        
+        # Table-specific filters
+        with st.expander("🔍 Table Filters", expanded=False):
+            fcol1, fcol2, fcol3, fcol4 = st.columns(4)
+            
+            # Get full breakdown table first
+            full_breakdown_table = plot_team_gpu_breakdown_table(filtered_all_df)
+            
+            with fcol1:
+                table_teams = st.multiselect(
+                    "Filter by Team",
+                    options=sorted(full_breakdown_table["Team"].unique()),
+                    default=sorted(full_breakdown_table["Team"].unique()),
+                    key="table_team_filter"
+                )
+            
+            with fcol2:
+                table_gpu_types = st.multiselect(
+                    "Filter by GPU Type",
+                    options=sorted(full_breakdown_table["GPU Type"].unique()),
+                    default=sorted(full_breakdown_table["GPU Type"].unique()),
+                    key="table_gpu_filter"
+                )
+            
+            with fcol3:
+                table_workload_types = st.multiselect(
+                    "Filter by Workload",
+                    options=sorted(full_breakdown_table["Workload Type"].unique()),
+                    default=sorted(full_breakdown_table["Workload Type"].unique()),
+                    key="table_workload_filter"
+                )
+            
+            with fcol4:
+                table_clouds = st.multiselect(
+                    "Filter by Cloud",
+                    options=sorted(full_breakdown_table["Cloud"].unique()),
+                    default=sorted(full_breakdown_table["Cloud"].unique()),
+                    key="table_cloud_filter"
+                )
+        
+        # Apply table filters
+        filtered_breakdown = full_breakdown_table[
+            (full_breakdown_table["Team"].isin(table_teams)) &
+            (full_breakdown_table["GPU Type"].isin(table_gpu_types)) &
+            (full_breakdown_table["Workload Type"].isin(table_workload_types)) &
+            (full_breakdown_table["Cloud"].isin(table_clouds))
+        ]
+        
+        # Display count
+        st.caption(f"📊 Showing {len(filtered_breakdown)} of {len(full_breakdown_table)} entries")
+        
+        # Display table
+        st.dataframe(
+            filtered_breakdown,
+            use_container_width=True,
+            hide_index=True,
+            height=700
+        )
+    
+    with col_right:
+        # Team GPU Hours Trend with nested tabs
+        st.subheader("📈 Daily GPU Hours Trend")
+        st.markdown("*30-day team usage over time*")
+        
+        st.markdown("")
+        
+        gpu_types = sorted(filtered_all_df["gpu_type"].unique())
+        workload_types = ["All", "committed", "on-demand", "spot"]
+        
+        # Level 1 tabs: GPU Types
+        gpu_tab_labels = ["📊 All GPU Types"] + gpu_types
+        gpu_tabs = st.tabs(gpu_tab_labels)
+        
+        # Tab 0: All GPU Types
+        with gpu_tabs[0]:
+            st.markdown("")
+            # Level 2 tabs: Workload Types
+            workload_tabs = st.tabs(workload_types)
+            
+            for w_idx, workload in enumerate(workload_types):
+                with workload_tabs[w_idx]:
+                    st.plotly_chart(
+                        plot_team_gpu_hours_trend(
+                            filtered_all_df, 
+                            timeseries_df, 
+                            gpu_type_filter=None,
+                            workload_filter=None if workload == "All" else workload
+                        ),
+                        use_container_width=True,
+                        key=f"trend_all_gpu_{workload}_{w_idx}"
+                    )
+        
+        # Individual GPU Type tabs
+        for gpu_idx, gpu_type in enumerate(gpu_types):
+            with gpu_tabs[gpu_idx + 1]:
+                st.markdown("")
+                # Level 2 tabs: Workload Types
+                workload_tabs = st.tabs(workload_types)
+                
+                for w_idx, workload in enumerate(workload_types):
+                    with workload_tabs[w_idx]:
+                        st.plotly_chart(
+                            plot_team_gpu_hours_trend(
+                                filtered_all_df,
+                                timeseries_df,
+                                gpu_type_filter=gpu_type,
+                                workload_filter=None if workload == "All" else workload
+                            ),
+                            use_container_width=True,
+                            key=f"trend_{gpu_type}_{workload}_{gpu_idx}_{w_idx}"
+                        )
+    
+    st.markdown("---")
+    st.markdown("")
+    
+    # Usage breakdown visualizations - side by side
+    st.subheader("📊 GPU Usage Breakdown")
+    st.markdown("*Team × GPU Type × Workload Type analysis*")
+    
+    st.markdown("")
+    
+    col1, col2 = st.columns([1, 1])
+    
+    with col1:
+        # Sunburst - Overview
+        st.markdown("##### 🌐 Hierarchy Overview")
+        st.markdown("*Click to drill: Team → GPU → Workload*")
+        st.plotly_chart(
+            plot_sunburst_team_gpu(filtered_all_df),
+            use_container_width=True,
+            key="s2_sunburst"
+        )
+    
+    with col2:
+        # Team GPU Hours Trend with Tabs
+        st.markdown("##### 📈 Daily GPU Hours Trend")
+        st.markdown("*30-day team usage over time*")
+        
+        # Create tabs: All + individual GPU types
+        gpu_types = sorted(filtered_all_df["gpu_type"].unique())
+        tab_labels = ["All"] + gpu_types
+        trend_tabs = st.tabs(tab_labels)
+        
+        # Tab 0: All GPU Types
+        with trend_tabs[0]:
+            st.plotly_chart(
+                plot_team_gpu_hours_trend(filtered_all_df, timeseries_df, gpu_type_filter=None),
+                use_container_width=True,
+                key="s2_breakdown_trend_all"
+            )
+        
+        # Individual GPU Type tabs
+        for idx, gpu_type in enumerate(gpu_types):
+            with trend_tabs[idx + 1]:
+                st.plotly_chart(
+                    plot_team_gpu_hours_trend(filtered_all_df, timeseries_df, gpu_type_filter=gpu_type),
+                    use_container_width=True,
+                    key=f"s2_breakdown_trend_{gpu_type}_{idx}"
+                )
+    
+    st.markdown("")
+    
+    # GPU Hours breakdown
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.plotly_chart(
+            plot_gpu_hours_by_team_stacked(filtered_all_df),
+            use_container_width=True
+        )
+    
+    with col2:
+        st.plotly_chart(
+            plot_team_cloud_workload_heatmap(filtered_all_df),
             use_container_width=True
         )
     
@@ -1347,14 +1928,16 @@ def main():
             st.markdown("**Used % (Committed Only)**")
             st.plotly_chart(
                 plot_used_trend_by_team_all_gpus(filtered_all_df, timeseries_df),
-                use_container_width=True
+                use_container_width=True,
+                key="s3_used_all_gpus"
             )
         
         with col2:
             st.markdown("**Utilization % (All Workload Types)**")
             st.plotly_chart(
                 plot_utilization_trend_by_team_all_gpus(filtered_all_df, timeseries_df),
-                use_container_width=True
+                use_container_width=True,
+                key="s3_util_all_gpus"
             )
     
     # Tabs 1+: Individual GPU Types
@@ -1372,7 +1955,8 @@ def main():
                         timeseries_df, 
                         gpu_type
                     ),
-                    use_container_width=True
+                    use_container_width=True,
+                    key=f"s3_used_{gpu_type}_{idx}"
                 )
             
             with col2:
@@ -1383,7 +1967,8 @@ def main():
                         timeseries_df, 
                         gpu_type
                     ),
-                    use_container_width=True
+                    use_container_width=True,
+                    key=f"s3_util_{gpu_type}_{idx}"
                 )
     
     st.markdown("---")
@@ -1456,45 +2041,86 @@ def main():
     # Display heatmaps based on filters
     if pattern_selected_teams and pattern_selected_gpu_types:
         
-        # Main heatmap: Hour × Day
-        st.subheader("📊 Hourly Usage Pattern")
-        st.plotly_chart(
-            plot_dynamic_usage_heatmap(
-                hourly_patterns_df,
-                pattern_selected_teams,
-                pattern_selected_gpu_types,
-                pattern_metric
-            ),
-            use_container_width=True
-        )
+        # Main row: Hourly Pattern and Weekly Summary side by side
+        col_hourly, col_weekly = st.columns([1, 1])
         
-        st.markdown("")
-        st.markdown("---")
-        st.markdown("")
-        
-        # Secondary heatmaps: Weekday patterns
-        st.subheader("📅 Weekly Summary Patterns")
-        
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            st.markdown("**Metrics × Weekday**")
+        with col_hourly:
+            st.subheader("📊 Hourly Usage Pattern")
             st.plotly_chart(
-                plot_metrics_by_weekday_heatmap(timeseries_df),
-                use_container_width=True
+                plot_dynamic_usage_heatmap(
+                    hourly_patterns_df,
+                    pattern_selected_teams,
+                    pattern_selected_gpu_types,
+                    pattern_metric
+                ),
+                use_container_width=True,
+                key="s4_hourly_heatmap"
             )
         
-        with col2:
+        with col_weekly:
+            st.subheader("📅 Weekly Summary Patterns")
+            
+            # Metrics × Weekday (filtered by pattern selection!)
+            st.markdown("**Metrics × Weekday**")
+            st.caption(f"Filtered: {len(pattern_selected_teams)} teams, {len(pattern_selected_gpu_types)} GPU types")
+            
+            # Filter data by pattern selections
+            pattern_filtered_data = filtered_all_df[
+                (filtered_all_df["team"].isin(pattern_selected_teams)) &
+                (filtered_all_df["gpu_type"].isin(pattern_selected_gpu_types))
+            ]
+            
+            # Calculate metrics from filtered data simulated over time
+            filtered_metrics_by_day = []
+            for day in range(7):
+                weekend_factor = 0.6 if day >= 5 else 1.0
+                # Get metrics from pattern-filtered teams/GPUs
+                day_used = pattern_filtered_data[
+                    pattern_filtered_data["workload_type"] == "committed"
+                ]["used_pct"].mean() * weekend_factor if not pattern_filtered_data.empty else 0
+                day_util = pattern_filtered_data["utilization_pct"].mean() * weekend_factor if not pattern_filtered_data.empty else 0
+                day_idle = 100 - day_used
+                filtered_metrics_by_day.append([day_used, day_util, day_idle])
+            
+            # Transpose for heatmap
+            pivot_data = list(map(list, zip(*filtered_metrics_by_day)))
+            day_names = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+            
+            fig_metrics = go.Figure(data=go.Heatmap(
+                z=pivot_data,
+                x=day_names,
+                y=["Used %", "Utilization %", "Idle %"],
+                colorscale="RdYlGn",
+                text=[[f"{val:.1f}%" for val in row] for row in pivot_data],
+                texttemplate="%{text}",
+                textfont={"size": 11},
+                hovertemplate="<b>%{y}</b><br>%{x}: %{z:.1f}%<extra></extra>",
+                colorbar=dict(title="Value (%)")
+            ))
+            
+            fig_metrics.update_layout(
+                title="<b>Metrics × Weekday</b>",
+                template=PLOTLY_TEMPLATE,
+                height=250,
+                title_font_size=14
+            )
+            
+            st.plotly_chart(fig_metrics, use_container_width=True, key="s4_metrics_weekday")
+            
+            st.markdown("")
+            
             # Filter committed data for team heatmap
             pattern_filtered_committed = filtered_all_df[
                 (filtered_all_df["workload_type"] == "committed") &
                 (filtered_all_df["team"].isin(pattern_selected_teams))
             ]
             
+            # Team × Weekday
             st.markdown("**Team × Weekday**")
             st.plotly_chart(
                 plot_team_by_weekday_heatmap(pattern_filtered_committed, timeseries_df),
-                use_container_width=True
+                use_container_width=True,
+                key="s4_team_weekday"
             )
     else:
         st.warning("⚠️ Please select at least one team and one GPU type")
