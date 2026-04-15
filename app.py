@@ -17,6 +17,10 @@ import plotly.express as px
 import plotly.graph_objects as go
 from datetime import datetime, timedelta
 
+import gpu_tools
+from chat_ui import render_gpu_assistant
+from user_view import render_user_view
+
 # ============================================================================
 # PAGE CONFIG
 # ============================================================================
@@ -25,7 +29,7 @@ st.set_page_config(
     page_title="Executive GPU Dashboard",
     page_icon="📊",
     layout="wide",
-    initial_sidebar_state="collapsed"
+    initial_sidebar_state="expanded"
 )
 
 # Dark theme for Plotly
@@ -1226,16 +1230,43 @@ def plot_team_by_weekday_heatmap(filtered_df, timeseries_df):
 # ============================================================================
 
 def main():
-    st.title("📊 Executive GPU Dashboard")
-    st.markdown("**Leadership View** | Committed GPU Capacity & Efficiency")
-    
-    st.markdown("---")
-    
     # Load data
     all_gpu_df = generate_all_gpu_data()
     timeseries_df = generate_30day_timeseries()
     hourly_patterns_df = generate_hourly_usage_patterns()
-    
+
+    # Initialize GPU tools for chatbot
+    gpu_tools.init(all_gpu_df, timeseries_df, hourly_patterns_df)
+
+    # ── Page Navigation ──────────────────────────────────────────────
+    page = st.radio(
+        "View",
+        ["GPU Assistant", "My GPUs", "Executive Dashboard"],
+        index=0,
+        horizontal=True,
+        label_visibility="collapsed",
+    )
+
+    if page == "GPU Assistant":
+        st.title("GPU Assistant")
+        st.caption("Ask questions about GPU usage, scheduling, efficiency, and costs — powered by LlamaStack")
+        st.markdown("---")
+        render_gpu_assistant()
+        return
+
+    if page == "My GPUs":
+        st.title("My GPU Dashboard")
+        st.markdown("**Your team's GPU usage, scheduling, and efficiency**")
+        st.markdown("---")
+        render_user_view(all_gpu_df, timeseries_df, hourly_patterns_df)
+        return
+
+    # ── Executive Dashboard (original) ───────────────────────────────
+    st.title("Executive GPU Dashboard")
+    st.markdown("**Leadership View** | Committed GPU Capacity & Efficiency")
+
+    st.markdown("---")
+
     # Separate committed for Section 1
     committed_df = all_gpu_df[all_gpu_df["workload_type"] == "committed"]
     
