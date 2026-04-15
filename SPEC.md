@@ -511,8 +511,6 @@ returns:
   total_gpus: int
 ```
 
-### New Tools (3) — Kueue / Job Status
-
 ### get_queue_status
 
 ```yaml

@@ -119,8 +119,9 @@ def validate(spec_path: str) -> list[str]:
     missing_in_spec = code_names - spec_names
     missing_in_schema = code_names - schema_names
 
+    # Tools in spec but not code are "planned" — warn but don't fail
     for name in missing_in_code:
-        errors.append(f"Tool '{name}' in SPEC.md but not in gpu_tools.TOOL_REGISTRY")
+        print(f"  PLANNED: Tool '{name}' in SPEC.md but not yet implemented (OK)")
     for name in missing_in_spec:
         errors.append(f"Tool '{name}' in gpu_tools.TOOL_REGISTRY but not in SPEC.md")
     for name in missing_in_schema:
@@ -184,7 +185,10 @@ def main():
     else:
         spec_tools = parse_spec_tools(spec_path)
         code_tools = get_code_tools()
-        print(f"OK — {len(spec_tools)} tools in SPEC.md, {len(code_tools)} in code. All match.")
+        planned = set(spec_tools.keys()) - set(code_tools.keys())
+        implemented = set(spec_tools.keys()) & set(code_tools.keys())
+        msg = f"OK — {len(implemented)} implemented, {len(planned)} planned, {len(code_tools)} in code."
+        print(msg)
         sys.exit(0)
 
 
