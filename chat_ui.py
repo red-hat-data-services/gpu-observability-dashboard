@@ -25,26 +25,28 @@ KEYWORD_TOOL_MAP = [
     (["peak", "busiest", "schedule", "best time", "when should", "run my job", "submit", "launch"], "get_peak_hours", {}),
     (["weekend", "saturday", "sunday", "off hours", "night"], "get_weekend_usage", {}),
     (["trend", "going up", "going down", "increasing", "changing", "over time", "last 30", "month"], "get_trend", {}),
-    (["cloud", "aws", "gcp", "ibm", "distribution", "where are", "which cloud"], "get_cloud_distribution", {}),
-    (["fail", "preempt", "evict", "kill", "why did", "what happened", "error", "pending", "stuck"], "get_waste_analysis", {"min_waste_pct": 15}),
+    (["cloud", "aws", "distribution", "where are", "which cloud"], "get_cloud_distribution", {}),
+    (["queue", "pending", "stuck", "waiting", "why is my job", "busy"], "get_queue_status", {}),
+    (["workload", "running", "preempt", "evict", "fail", "what happened", "my job"], "get_workload_status", {}),
+    (["health", "temperature", "temp", "hot", "overheat", "power", "healthy", "gpu health"], "get_gpu_health", {}),
 ]
 
 TEAM_NAMES = {
-    "ml platform": "ML Platform", "ai research": "AI Research",
-    "data science": "Data Science", "engineering": "Engineering",
-    "customer analytics": "Customer Analytics",
+    "team-alpha": "team-alpha", "team alpha": "team-alpha", "alpha": "team-alpha",
+    "team-beta": "team-beta", "team beta": "team-beta", "beta": "team-beta",
+    "llama": "llama-stack-rag", "llama-stack": "llama-stack-rag",
+    "gpuaas": "gpuaas-demo", "demo": "gpuaas-demo",
 }
 
 GPU_TYPE_NAMES = {
-    "l4": "L4", "t4": "T4", "a100-40": "A100-40GB", "a100 40": "A100-40GB",
-    "a100-80": "A100-80GB", "a100 80": "A100-80GB", "a100": "A100-80GB",
-    "h100": "H100", "h200": "H200", "b200": "B200",
+    "a10g": "NVIDIA A10G", "a10": "NVIDIA A10G", "nvidia a10": "NVIDIA A10G",
 }
 
 SYSTEM_PROMPT = """\
-You are a GPU infrastructure analyst for the AIPCC GPU-as-a-Service platform.
-You help engineers, team leads, directors, and FinOps understand GPU allocation,
-utilization, waste, scheduling, and usage patterns across AWS, GCP, and IBM Cloud.
+You are a GPU infrastructure analyst for the mid-chatbot cluster (ROSA on AWS).
+The cluster has 8x NVIDIA A10G GPUs across 2 g5.12xlarge nodes.
+Teams: team-alpha (P1/guaranteed), team-beta (P2/opportunistic).
+Kueue manages GPU scheduling with preemption support.
 
 ALWAYS use the available tools to query data before answering. Never guess numbers.
 When reporting metrics, explain what they mean and suggest actionable next steps.
@@ -52,45 +54,45 @@ Keep responses concise — 2-4 sentences of insight plus a recommendation.
 
 Key concepts:
 - Used% = allocated/total GPUs (reservation rate)
-- Utilization% = actual GPU compute load
+- Utilization% = actual GPU compute load (from DCGM)
 - Waste = Used% - Utilization% (allocated but idle)
-- P1 = guaranteed workloads (cannot be preempted)
-- P2 = opportunistic workloads (fully preemptible)
-- GPU types ranked by power: B200 > H200 > H100 > A100-80 > A100-40 > T4 > L4
+- P1 (high-priority) = guaranteed workloads, cannot be preempted
+- P2 (low-priority) = opportunistic workloads, fully preemptible
+- Kueue ClusterQueue: gpu-cluster-queue, LocalQueues per team
 """
 
 # ── Example prompts — both end-user and executive ────────────────────
 
 EXAMPLE_CATEGORIES = {
-    "Scheduling & Jobs": [
+    "Scheduling": [
         "When should I schedule my batch job?",
         "What are the peak GPU usage hours?",
-        "Best time to run a training job on H100?",
+        "Best time to run a training job on A10G?",
         "Is the weekend a good time for long jobs?",
     ],
     "My Team": [
-        "How efficient is my team (Engineering)?",
-        "Is AI Research wasting H100 GPUs?",
-        "Show me Data Science GPU allocation",
-        "Compare ML Platform vs Engineering efficiency",
+        "How efficient is team-alpha?",
+        "Show me team-beta's GPU allocation",
+        "Which team is wasting the most GPUs?",
+        "Compare team-alpha vs team-beta efficiency",
     ],
     "Troubleshooting": [
-        "Why might my job be pending?",
-        "Which GPUs are most oversubscribed?",
-        "Where is the biggest GPU bottleneck?",
-        "Are there preemption risks for spot workloads?",
+        "Why is my job pending?",
+        "Is the queue busy right now?",
+        "Are there preemption risks for my spot workload?",
+        "What's the current GPU temperature?",
     ],
-    "Capacity & Cost": [
+    "Capacity & Health": [
         "How many GPUs do we have total?",
-        "Where are our H100 GPUs deployed?",
-        "Which cloud has the most spare capacity?",
-        "Should we buy more B200s or are we underutilizing?",
+        "Are GPUs healthy?",
+        "Is any GPU overheating?",
+        "What's the overall utilization trend?",
     ],
-    "Trends & Patterns": [
+    "Trends": [
         "Is GPU utilization trending up or down?",
-        "How has committed allocation changed this month?",
-        "Which teams work on weekends?",
+        "What's the waste gap this month?",
         "Are GPUs idle at night?",
+        "Where is the biggest GPU bottleneck?",
     ],
 }
 
@@ -234,15 +236,100 @@ def _build_chart(tool_name: str, result: dict) -> go.Figure | None:
                 return None
             fig = go.Figure()
             fig.add_trace(go.Bar(name="Total", x=df["cloud"], y=df["total_gpus"],
-                                 marker_color=[{"AWS": "#FF9900", "GCP": "#34A853", "IBM Cloud": "#0F62FE"}.get(c, "#888") for c in df["cloud"]],
+                                 marker_color=[{"AWS": "#FF9900"}.get(c, "#888") for c in df["cloud"]],
                                  text=df["total_gpus"], textposition="outside"))
             fig.add_trace(go.Bar(name="Allocated", x=df["cloud"], y=df["allocated_gpus"],
-                                 marker_color=[{"AWS": "#cc7a00", "GCP": "#267a3d", "IBM Cloud": "#0a47b5"}.get(c, "#666") for c in df["cloud"]],
+                                 marker_color=[{"AWS": "#cc7a00"}.get(c, "#666") for c in df["cloud"]],
                                  text=df["allocated_gpus"], textposition="outside"))
             fig.update_layout(
                 title=f"<b>GPU Distribution by Cloud</b> — {result.get('total_gpus', '?')} total",
                 barmode="group", template="plotly_dark", height=450,
                 legend=dict(orientation="h", y=1.08, x=0.5, xanchor="center"),
+            )
+            return fig
+
+        elif tool_name == "get_queue_status" and "cluster_queue" in result:
+            cq = result["cluster_queue"]
+            lqs = result.get("local_queues", [])
+            labels = [cq.get("name", "cluster")] + [lq["name"] for lq in lqs]
+            pending = [cq.get("pending_workloads", 0)] + [lq.get("pending", 0) for lq in lqs]
+            admitted = [cq.get("admitted_workloads", 0)] + [lq.get("admitted", 0) for lq in lqs]
+            fig = go.Figure()
+            fig.add_trace(go.Bar(name="Admitted", x=labels, y=admitted, marker_color="#2ca02c",
+                                 text=admitted, textposition="outside"))
+            fig.add_trace(go.Bar(name="Pending", x=labels, y=pending, marker_color="#ff7f0e",
+                                 text=pending, textposition="outside"))
+            fig.update_layout(
+                title="<b>Kueue Queue Status</b>",
+                barmode="group", template="plotly_dark", height=400,
+                legend=dict(orientation="h", y=1.08, x=0.5, xanchor="center"),
+            )
+            return fig
+
+        elif tool_name == "get_workload_status" and "workloads" in result:
+            workloads = result.get("workloads", [])
+            if not workloads:
+                by = result.get("by_status", {})
+                labels = list(by.keys())
+                values = list(by.values())
+                colors = {"admitted": "#2ca02c", "pending": "#ff7f0e", "preempted": "#d62728"}
+                fig = go.Figure(data=[go.Bar(
+                    x=labels, y=values,
+                    marker_color=[colors.get(l, "#888") for l in labels],
+                    text=values, textposition="outside",
+                )])
+                fig.update_layout(
+                    title="<b>Workload Status</b> — no workloads",
+                    yaxis_title="Count", template="plotly_dark", height=400,
+                )
+                return fig
+            # Per-workload bar: GPU requests colored by status
+            names = [w["name"][:25] for w in workloads]
+            gpus = [w.get("gpu_requests", 0) for w in workloads]
+            status_colors = {"admitted": "#2ca02c", "pending": "#ff7f0e", "preempted": "#d62728"}
+            colors_list = [status_colors.get(w.get("status", ""), "#888") for w in workloads]
+            hover = [
+                f"{w['name']}<br>{w.get('namespace','')}<br>Status: {w.get('status','')}<br>Priority: {w.get('priority','')}"
+                for w in workloads
+            ]
+            fig = go.Figure(data=[go.Bar(
+                x=names, y=gpus,
+                marker_color=colors_list,
+                text=[w.get("status", "") for w in workloads],
+                textposition="outside",
+                hovertext=hover, hoverinfo="text",
+            )])
+            qctx = result.get("queue_context", {})
+            quota = qctx.get("gpu_quota", 0)
+            if quota:
+                fig.add_hline(y=quota, line_dash="dash", line_color="white",
+                              annotation_text=f"Quota: {quota} GPU(s)", annotation_position="top right")
+            fig.update_layout(
+                title=f"<b>Workloads</b> — {len(workloads)} total",
+                yaxis_title="GPU Requests", template="plotly_dark", height=400,
+            )
+            return fig
+
+        elif tool_name == "get_gpu_health" and "gpus" in result:
+            gpus = result["gpus"]
+            if not gpus:
+                return None
+            df = pd.DataFrame(gpus)
+            status_colors = {"healthy": "#2ca02c", "idle": "#4682b4", "warm": "#ff7f0e", "hot": "#d62728"}
+            fig = go.Figure()
+            fig.add_trace(go.Bar(
+                x=[f"GPU-{g['gpu_index']}<br>{g['node'][-15:]}" for g in gpus],
+                y=df["temperature_c"],
+                marker_color=[status_colors.get(g["status"], "#888") for g in gpus],
+                text=[f"{t}°C" for t in df["temperature_c"]],
+                textposition="outside",
+                name="Temperature",
+            ))
+            fig.add_hline(y=85, line_dash="dash", line_color="#d62728",
+                          annotation_text="Hot threshold", annotation_position="top right")
+            fig.update_layout(
+                title="<b>GPU Health — Temperature</b>",
+                yaxis_title="Temperature (°C)", template="plotly_dark", height=400,
             )
             return fig
 
@@ -306,6 +393,40 @@ def _format_result(tool_name: str, result: dict) -> str:
         lines.append(f"**{result.get('total_gpus')} GPUs** across clouds:")
         for row in result.get("distribution", []):
             lines.append(f"- **{row['cloud']}**: {row['total_gpus']} GPUs ({row['avg_utilization_pct']}% util)")
+
+    elif tool_name == "get_queue_status":
+        cq = result.get("cluster_queue", {})
+        lines.append(f"**Queue:** {cq.get('name', 'gpu-cluster-queue')}")
+        lines.append(f"- Pending: **{cq.get('pending_workloads', 0)}** | Admitted: **{cq.get('admitted_workloads', 0)}** | GPU quota: **{cq.get('nominal_quota', {}).get('gpu', '?')}**")
+        for lq in result.get("local_queues", []):
+            lines.append(f"- {lq['namespace']}/{lq['name']}: {lq.get('pending', 0)} pending, {lq.get('admitted', 0)} admitted")
+        lines.append(f"\n{result.get('summary', '')}")
+
+    elif tool_name == "get_workload_status":
+        by = result.get("by_status", {})
+        qctx = result.get("queue_context", {})
+        lines.append(f"**{result.get('total_workloads', 0)} workloads** — {by.get('admitted', 0)} admitted, {by.get('pending', 0)} pending, {by.get('preempted', 0)} preempted")
+        if qctx:
+            lines.append(f"GPU quota: **{qctx.get('gpu_admitted', 0)}/{qctx.get('gpu_quota', '?')}** used, **{qctx.get('gpu_available', 0)}** available")
+        for w in result.get("workloads", [])[:8]:
+            icon = "🟢" if w["status"] == "admitted" else "🟡" if w["status"] == "pending" else "🔴"
+            status_line = f"- {icon} **{w['name']}** ({w['namespace']}) — {w['status']}, {w.get('gpu_requests', 0)} GPU(s)"
+            if w.get("priority"):
+                status_line += f", priority: {w['priority']}"
+            lines.append(status_line)
+            if w.get("pending_reason"):
+                lines.append(f"  ↳ *{w['pending_reason']}*")
+        if result.get("recent_events"):
+            lines.append("\n**Recent events:**")
+            for ev in result["recent_events"][:3]:
+                lines.append(f"- {ev['reason']}: {ev['message'][:100]}")
+
+    elif tool_name == "get_gpu_health":
+        summary = result.get("summary", {})
+        lines.append(f"**{summary.get('total', 0)} GPUs** — {summary.get('healthy', 0)} healthy, {summary.get('idle', 0)} idle, {summary.get('hot', 0)} hot/warm")
+        for g in result.get("gpus", []):
+            icon = {"healthy": "🟢", "idle": "🔵", "warm": "🟡", "hot": "🔴"}.get(g["status"], "⚪")
+            lines.append(f"- {icon} GPU-{g['gpu_index']} ({g['node'][-20:]}): {g['utilization_pct']}% util, {g['temperature_c']}°C, {g['power_watts']}W, {g['memory_used_mib']}/{g['memory_used_mib']+g['memory_free_mib']:.0f} MiB")
 
     return "\n".join(lines)
 

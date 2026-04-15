@@ -7,7 +7,7 @@ Machine-parseable spec for implementation. CI validates this matches code.
 ```yaml
 spec_version: "2.0.0"
 last_updated: "2026-04-16"
-status: "spec-only — implementation pending"
+status: "implemented"
 ```
 
 ---
@@ -225,18 +225,18 @@ Pod IPs discovered via: `oc get pods -n nvidia-gpu-operator -l app=nvidia-dcgm-e
 
 | File | Purpose | Status |
 |------|---------|--------|
-| `data_live.py` | **NEW** — Live data fetcher (Thanos + K8s API). Replaces `generate_*()` functions. | To implement |
-| `gpu_tools.py` | **MODIFY** — Add 3 new tools for Kueue/job queries. Update existing 7 to use live data. | To modify |
-| `mcp_server.py` | **MODIFY** — Remove duplicated generate functions, import from data_live.py. Add 3 new MCP tools. | To modify |
-| `chat_ui.py` | **EXISTS** — Chat-first layout (left=chat, right=chart). Already done. | Done |
-| `user_view.py` | **EXISTS** — End-user page. Update to use live data. | To modify |
-| `app.py` | **MODIFY** — Replace `generate_*()` calls with `data_live` imports. | To modify |
-| `k8s/serviceaccount.yaml` | **NEW** — ServiceAccount + RBAC for the dashboard pod. | To create |
-| `k8s/servicemonitor.yaml` | **NEW** — Optional: Route DCGM metrics into Thanos. | To create |
-| `Dockerfile` | **MODIFY** — Add `kubernetes` and `requests` packages. | To modify |
-| `requirements.txt` | **MODIFY** — Add `kubernetes>=29.0.0`. | To modify |
+| `data_live.py` | **NEW** — Live data fetcher (Thanos + K8s API). Replaces `generate_*()` functions. | Done |
+| `gpu_tools.py` | **MODIFY** — Add 3 new tools for Kueue/job queries. Update existing 7 to use live data. | Done |
+| `mcp_server.py` | **MODIFY** — Remove duplicated generate functions, import from data_live.py. Add 3 new MCP tools. | Done |
+| `chat_ui.py` | **EXISTS** — Chat-first layout (left=chat, right=chart). Updated for new tools. | Done |
+| `user_view.py` | **EXISTS** — End-user page. Updated for live data. | Done |
+| `app.py` | **MODIFY** — Replace `generate_*()` calls with `data_live` imports. | Done |
+| `k8s/serviceaccount.yaml` | **NEW** — ServiceAccount + RBAC for the dashboard pod. | Done |
+| `k8s/servicemonitor.yaml` | **NEW** — Optional: Route DCGM metrics into Thanos. | Done |
+| `Dockerfile` | **MODIFY** — Add `requests` package, include data_live.py. | Done |
+| `requirements.txt` | **MODIFY** — Add `requests>=2.31.0`. | Done |
 | `SPEC.md` | **THIS FILE** — Living spec. | Done |
-| `scripts/check_spec.py` | **MODIFY** — Update for new tools. | To modify |
+| `scripts/check_spec.py` | **EXISTS** — Validates spec against code. Passes with 10/10 tools. | Done |
 | `.github/workflows/spec-sync.yml` | **EXISTS** — CI spec validation. | Done |
 
 ---

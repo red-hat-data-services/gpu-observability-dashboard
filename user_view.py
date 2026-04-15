@@ -14,6 +14,8 @@ import plotly.express as px
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
+import data_live
+
 PLOTLY_TEMPLATE = "plotly_dark"
 
 CLOUD_COLORS = {
@@ -24,7 +26,6 @@ CLOUD_COLORS = {
 
 PRIORITY_COLORS = {
     "committed": "#1f77b4",
-    "on-demand": "#ff7f0e",
     "spot": "#2ca02c",
 }
 
@@ -41,6 +42,171 @@ def _status_indicator(status, text):
     colors = {"good": "#2ca02c", "warning": "#ff7f0e", "critical": "#d62728", "info": "#1f77b4"}
     color = colors.get(status, "#888888")
     return f'<span style="color:{color}; font-size:1.2em;">●</span> {text}'
+
+
+# ── Workload card CSS + badge colors ────────────────────────────────
+
+_PRIORITY_BADGE = {
+    "high-priority": ("P1", "#3b82f6", "#1e3a5f"),
+    "low-priority": ("P2", "#f59e0b", "#5c3d0e"),
+}
+
+_STATUS_BADGE = {
+    "admitted": ("#2ca02c", "#143d14"),
+    "pending": ("#f59e0b", "#5c3d0e"),
+    "preempted": ("#d62728", "#4a0e0e"),
+    "finished": ("#6b7280", "#2d2d2d"),
+}
+
+_CARD_CSS = """
+<style>
+.wl-board { border-collapse: collapse; width: 100%; }
+.wl-board th, .wl-board td { border: 1px solid #333; padding: 8px; vertical-align: top; }
+.wl-board th { background: #1a1a2e; font-size: 0.95em; }
+.wl-board td { background: #0d1117; min-height: 60px; }
+.wl-card {
+  display: inline-block; margin: 3px; padding: 6px 10px; border-radius: 6px;
+  font-size: 0.82em; line-height: 1.4; min-width: 140px; vertical-align: top;
+}
+.wl-badge {
+  display: inline-block; padding: 1px 6px; border-radius: 3px;
+  font-size: 0.75em; font-weight: 600; margin-left: 4px;
+}
+.wl-gpu { font-weight: 600; }
+.wl-name { font-weight: 500; margin-bottom: 2px; }
+.wl-meta { color: #9ca3af; font-size: 0.78em; }
+.quota-pill {
+  display: inline-block; padding: 2px 8px; border-radius: 10px;
+  font-size: 0.78em; margin: 2px;
+}
+</style>
+"""
+
+
+def _workload_card_html(w: dict) -> str:
+    """Render a single workload card as HTML."""
+    status = w.get("status", "pending")
+    bg, border = _STATUS_BADGE.get(status, ("#6b7280", "#2d2d2d"))
+
+    priority = w.get("priority", "")
+    p_label, p_color, p_bg = _PRIORITY_BADGE.get(priority, ("", "#888", "#333"))
+    priority_badge = (
+        f'<span class="wl-badge" style="background:{p_bg};color:{p_color}">{p_label}</span>'
+        if p_label else ""
+    )
+
+    gpu_count = w.get("gpu_requests", 0)
+    name = w.get("name", "unknown")
+    # Shorten long Kueue-generated names
+    short_name = name
+    if len(short_name) > 28:
+        short_name = short_name[:25] + "..."
+
+    reason = w.get("pending_reason", "")
+    reason_line = f'<div class="wl-meta" title="{reason}">{reason[:50]}{"..." if len(reason)>50 else ""}</div>' if reason else ""
+
+    return (
+        f'<div class="wl-card" style="background:{border};border-left:3px solid {bg}">'
+        f'  <div class="wl-name">{short_name}{priority_badge}</div>'
+        f'  <span class="wl-badge" style="background:{bg};color:#fff">{gpu_count} GPU</span>'
+        f'  {reason_line}'
+        f'</div>'
+    )
+
+
+def _render_workload_activity():
+    """Render the workload activity Kanban board."""
+    st.markdown("#### Workload Activity")
+
+    kueue = data_live.fetch_kueue_status()
+    workloads = kueue.get("workloads", [])
+    cq = kueue.get("cluster_queue", {})
+    lqs = kueue.get("local_queues", [])
+
+    # Status header badges
+    n_pending = sum(1 for w in workloads if w.get("status") == "pending")
+    n_admitted = sum(1 for w in workloads if w.get("status") == "admitted")
+    n_finished = sum(1 for w in workloads if w.get("status") in ("finished", "preempted"))
+
+    st.markdown(
+        f'**Workload activity:** '
+        f'<span style="background:#5c3d0e;color:#f59e0b;padding:2px 10px;border-radius:4px;font-weight:600">Pending {n_pending}</span> '
+        f'<span style="background:#143d14;color:#2ca02c;padding:2px 10px;border-radius:4px;font-weight:600">Admitted {n_admitted}</span> '
+        f'<span style="background:#2d2d2d;color:#9ca3af;padding:2px 10px;border-radius:4px;font-weight:600">Finished {n_finished}</span>',
+        unsafe_allow_html=True,
+    )
+
+    # ClusterQueue quota info
+    quota_gpu = cq.get("nominal_quota", {}).get("gpu", 0)
+    admitted_total = cq.get("admitted_workloads", 0)
+    pending_total = cq.get("pending_workloads", 0)
+
+    st.markdown(
+        f'<div style="margin:8px 0;padding:6px 12px;background:#1a1a2e;border-radius:6px;font-size:0.88em">'
+        f'<b>{cq.get("name", "gpu-cluster-queue")}</b> &nbsp; '
+        f'<span class="quota-pill" style="background:#1e3a5f;color:#60a5fa">NVIDIA A10G</span> '
+        f'<span class="quota-pill" style="background:#1e3a5f;color:#60a5fa">Quota {admitted_total}/{quota_gpu}</span> '
+        f'</div>',
+        unsafe_allow_html=True,
+    )
+
+    if not workloads and not lqs:
+        st.info("No Kueue workloads or queues found. Submit a job with a `kueue.x-k8s.io/queue-name` label to see it here.")
+        return
+
+    # Build Kanban: rows = namespaces, columns = Pending / Admitted / Finished
+    namespaces = set()
+    for w in workloads:
+        namespaces.add(w.get("namespace", ""))
+    for lq in lqs:
+        namespaces.add(lq.get("namespace", ""))
+    namespaces = sorted(namespaces)
+
+    # Queue name lookup
+    ns_to_queue = {lq["namespace"]: lq["name"] for lq in lqs}
+
+    # Bucket workloads by namespace + status
+    buckets: dict[str, dict[str, list]] = {}
+    for ns in namespaces:
+        buckets[ns] = {"pending": [], "admitted": [], "finished": []}
+    for w in workloads:
+        ns = w.get("namespace", "")
+        status = w.get("status", "pending")
+        col = "finished" if status in ("finished", "preempted") else status
+        if ns in buckets:
+            buckets[ns][col].append(w)
+
+    # Render as HTML table
+    rows_html = ""
+    for ns in namespaces:
+        queue_name = ns_to_queue.get(ns, "")
+        pending_cards = "".join(_workload_card_html(w) for w in buckets[ns]["pending"]) or '<span style="color:#555">—</span>'
+        admitted_cards = "".join(_workload_card_html(w) for w in buckets[ns]["admitted"]) or '<span style="color:#555">—</span>'
+        finished_cards = "".join(_workload_card_html(w) for w in buckets[ns]["finished"]) or '<span style="color:#555">—</span>'
+
+        rows_html += (
+            f'<tr>'
+            f'  <td><b>{ns}</b><br><span style="color:#9ca3af;font-size:0.82em">{queue_name}</span></td>'
+            f'  <td>{pending_cards}</td>'
+            f'  <td>{admitted_cards}</td>'
+            f'  <td>{finished_cards}</td>'
+            f'</tr>'
+        )
+
+    table_html = (
+        f'{_CARD_CSS}'
+        f'<table class="wl-board">'
+        f'<thead><tr>'
+        f'  <th style="width:18%">Namespace</th>'
+        f'  <th style="width:27%">Pending</th>'
+        f'  <th style="width:27%">Admitted</th>'
+        f'  <th style="width:28%">Finished</th>'
+        f'</tr></thead>'
+        f'<tbody>{rows_html}</tbody>'
+        f'</table>'
+    )
+
+    st.markdown(table_html, unsafe_allow_html=True)
 
 
 def render_user_view(all_gpu_df, timeseries_df, hourly_df):
@@ -96,7 +262,14 @@ def render_user_view(all_gpu_df, timeseries_df, hourly_df):
     st.markdown("")
 
     # ══════════════════════════════════════════════════════════════════
-    # SECTION 2: GPU ALLOCATION BREAKDOWN
+    # SECTION 2: WORKLOAD ACTIVITY BOARD
+    # ══════════════════════════════════════════════════════════════════
+
+    st.markdown("---")
+    _render_workload_activity()
+
+    # ══════════════════════════════════════════════════════════════════
+    # SECTION 3: GPU ALLOCATION BREAKDOWN
     # ══════════════════════════════════════════════════════════════════
 
     col_left, col_right = st.columns(2)
@@ -237,7 +410,7 @@ def render_user_view(all_gpu_df, timeseries_df, hourly_df):
             return "color: #ff7f0e"
         return "color: #2ca02c"
 
-    styled = detail.style.applymap(highlight_waste, subset=["waste_gap"])
+    styled = detail.style.map(highlight_waste, subset=["waste_gap"])
     st.dataframe(
         detail,
         use_container_width=True,

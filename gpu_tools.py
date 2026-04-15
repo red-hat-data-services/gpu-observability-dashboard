@@ -15,16 +15,16 @@ _all_gpu_df: pd.DataFrame | None = None
 _timeseries_df: pd.DataFrame | None = None
 _hourly_df: pd.DataFrame | None = None
 
-# Constants matching app.py
-GPU_TYPES = ["L4", "T4", "A100-40GB", "A100-80GB", "H100", "H200", "B200"]
-CLOUDS = ["AWS", "GCP", "IBM Cloud"]
-TEAMS = ["ML Platform", "AI Research", "Data Science", "Engineering", "Customer Analytics"]
-WORKLOAD_TYPES = ["committed", "on-demand", "spot"]
+# Constants matching real cluster
+GPU_TYPES = ["NVIDIA A10G"]
+CLOUDS = ["AWS"]
+TEAMS = ["team-alpha", "team-beta", "llama-stack-rag", "gpuaas-demo"]
+WORKLOAD_TYPES = ["committed", "spot"]
 DAY_NAMES = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
 
 
 def init(all_gpu_df: pd.DataFrame, timeseries_df: pd.DataFrame, hourly_df: pd.DataFrame) -> None:
-    """Initialize with DataFrames from app.py's generate_*() functions."""
+    """Initialize with DataFrames from data_live or mock generators."""
     global _all_gpu_df, _timeseries_df, _hourly_df
     _all_gpu_df = all_gpu_df
     _timeseries_df = timeseries_df
@@ -36,8 +36,13 @@ def _require_init() -> None:
         raise RuntimeError("gpu_tools not initialized. Call init() first.")
 
 
+# ---------------------------------------------------------------------------
+# Existing 7 tools — updated for real cluster data
+# ---------------------------------------------------------------------------
+
+
 def get_gpu_inventory(cloud: str | None = None, gpu_type: str | None = None) -> dict:
-    """Get total GPU count by type and cloud provider."""
+    """Get real GPU inventory from cluster nodes and DCGM metrics."""
     _require_init()
     df = _all_gpu_df.copy()
 
@@ -139,7 +144,7 @@ def get_waste_analysis(min_waste_pct: float = 25.0) -> dict:
 
 
 def get_peak_hours(team: str | None = None, gpu_type: str | None = None) -> dict:
-    """Find hours/days with highest GPU usage."""
+    """Find hours/days with highest GPU usage and best scheduling times."""
     _require_init()
     df = _hourly_df.copy()
 
@@ -148,7 +153,6 @@ def get_peak_hours(team: str | None = None, gpu_type: str | None = None) -> dict
     if gpu_type:
         df = df[df["gpu_type"] == gpu_type]
 
-    # Aggregate by hour and day
     by_hour = df.groupby("hour").agg(
         gpu_hours=("gpu_hours", "mean"),
         utilization_pct=("utilization_pct", "mean"),
@@ -160,11 +164,8 @@ def get_peak_hours(team: str | None = None, gpu_type: str | None = None) -> dict
     ).reset_index().round(1)
     by_day["day_name"] = by_day["day_of_week"].map(lambda d: DAY_NAMES[d])
 
-    # Find peak
     peak_hour_row = by_hour.loc[by_hour["gpu_hours"].idxmax()]
     peak_day_row = by_day.loc[by_day["gpu_hours"].idxmax()]
-
-    # Find lowest (best time to schedule)
     low_hour_row = by_hour.loc[by_hour["gpu_hours"].idxmin()]
     low_day_row = by_day.loc[by_day["gpu_hours"].idxmin()]
 
@@ -201,10 +202,8 @@ def get_weekend_usage(team: str | None = None, gpu_type: str | None = None) -> d
     )
     by_team_day["day_name"] = by_team_day["day_of_week"].map(lambda d: DAY_NAMES[d])
 
-    # Overall weekend average
-    overall_util = round(float(df["utilization_pct"].mean()), 1)
+    overall_util = round(float(df["utilization_pct"].mean()), 1) if not df.empty else 0.0
 
-    # Per-team summary
     team_summary = (
         df.groupby("team")
         .agg(
@@ -292,7 +291,127 @@ def get_cloud_distribution(team: str | None = None, gpu_type: str | None = None)
     }
 
 
-# Tool registry for MCP server
+# ---------------------------------------------------------------------------
+# 3 new tools for Kueue + GPU health
+# ---------------------------------------------------------------------------
+
+
+def get_queue_status() -> dict:
+    """Get current Kueue queue status — pending workloads, admitted workloads, queue depth."""
+    import data_live
+    kueue = data_live.fetch_kueue_status()
+
+    cq = kueue.get("cluster_queue", {})
+    lqs = kueue.get("local_queues", [])
+
+    pending = cq.get("pending_workloads", 0)
+    admitted = cq.get("admitted_workloads", 0)
+    quota = cq.get("nominal_quota", {}).get("gpu", 0)
+
+    if pending == 0 and admitted == 0:
+        summary = f"Queue is idle — no workloads pending or admitted. {quota} GPU quota available."
+    elif pending > 0:
+        summary = f"Queue is busy — {pending} workloads pending, {admitted} admitted. GPU quota: {quota}."
+    else:
+        summary = f"Queue is active — {admitted} workloads admitted, none pending. GPU quota: {quota}."
+
+    return {
+        "cluster_queue": {
+            "name": cq.get("name", "gpu-cluster-queue"),
+            "pending_workloads": pending,
+            "admitted_workloads": admitted,
+            "nominal_quota": {"gpu": quota},
+        },
+        "local_queues": lqs,
+        "summary": summary,
+    }
+
+
+def get_workload_status(namespace: str | None = None) -> dict:
+    """Get status of Kueue workloads — running, pending, preempted."""
+    import data_live
+    kueue = data_live.fetch_kueue_status()
+
+    workloads = kueue.get("workloads", [])
+    events = kueue.get("recent_events", [])
+    cq = kueue.get("cluster_queue", {})
+    lqs = kueue.get("local_queues", [])
+
+    if namespace:
+        workloads = [w for w in workloads if w.get("namespace") == namespace]
+
+    by_status = {"admitted": 0, "pending": 0, "preempted": 0}
+    for w in workloads:
+        s = w.get("status", "pending")
+        if s in by_status:
+            by_status[s] += 1
+
+    # Enrich pending workloads with reason + admission context
+    quota = cq.get("nominal_quota", {}).get("gpu", 0)
+    admitted_gpu_total = sum(
+        w.get("gpu_requests", 0) for w in workloads if w.get("status") == "admitted"
+    )
+    gpu_available = max(0, quota - admitted_gpu_total)
+
+    for w in workloads:
+        if w.get("status") == "pending":
+            gpu_req = w.get("gpu_requests", 0)
+            priority = w.get("priority", "")
+
+            # Determine reason
+            if gpu_available < gpu_req:
+                if priority in ("low-priority", ""):
+                    # Check if higher-priority workloads hold the GPUs
+                    higher_admitted = [
+                        a for a in workloads
+                        if a.get("status") == "admitted"
+                        and a.get("priority") in ("high-priority",)
+                    ]
+                    if higher_admitted:
+                        w["pending_reason"] = (
+                            f"Quota full ({admitted_gpu_total}/{quota} GPUs admitted). "
+                            f"Higher-priority workloads hold the GPUs. "
+                            f"This low-priority workload will be admitted when a "
+                            f"high-priority workload finishes or quota is increased."
+                        )
+                    else:
+                        w["pending_reason"] = (
+                            f"Quota full ({admitted_gpu_total}/{quota} GPUs admitted). "
+                            f"Will be admitted when a running workload completes."
+                        )
+                else:
+                    w["pending_reason"] = (
+                        f"Quota full ({admitted_gpu_total}/{quota} GPUs admitted). "
+                        f"This high-priority workload may preempt a lower-priority one."
+                    )
+            else:
+                w["pending_reason"] = "Waiting for Kueue admission controller to process."
+        elif w.get("status") == "admitted":
+            w["pending_reason"] = None
+
+    return {
+        "total_workloads": len(workloads),
+        "by_status": by_status,
+        "workloads": workloads,
+        "recent_events": events[-10:],
+        "queue_context": {
+            "gpu_quota": quota,
+            "gpu_admitted": admitted_gpu_total,
+            "gpu_available": gpu_available,
+        },
+    }
+
+
+def get_gpu_health(node: str | None = None) -> dict:
+    """Get real-time GPU health — temperature, power, memory, utilization per GPU."""
+    import data_live
+    return data_live.fetch_gpu_health(node=node)
+
+
+# ---------------------------------------------------------------------------
+# Tool registry and schemas
+# ---------------------------------------------------------------------------
+
 TOOL_REGISTRY = {
     "get_gpu_inventory": get_gpu_inventory,
     "get_team_efficiency": get_team_efficiency,
@@ -301,24 +420,26 @@ TOOL_REGISTRY = {
     "get_weekend_usage": get_weekend_usage,
     "get_trend": get_trend,
     "get_cloud_distribution": get_cloud_distribution,
+    "get_queue_status": get_queue_status,
+    "get_workload_status": get_workload_status,
+    "get_gpu_health": get_gpu_health,
 }
 
-# Tool schemas for MCP server and spec validation
 TOOL_SCHEMAS = {
     "get_gpu_inventory": {
         "name": "get_gpu_inventory",
-        "description": "Get total GPU count by type and cloud provider. Use to answer questions like 'how many H100s do we have?' or 'what GPUs are in AWS?'",
+        "description": "Get real GPU inventory from cluster nodes and DCGM metrics.",
         "inputSchema": {
             "type": "object",
             "properties": {
-                "cloud": {"type": "string", "description": "Filter by cloud provider (AWS, GCP, IBM Cloud)", "enum": CLOUDS},
+                "cloud": {"type": "string", "description": "Filter by cloud provider", "enum": CLOUDS},
                 "gpu_type": {"type": "string", "description": "Filter by GPU type", "enum": GPU_TYPES},
             },
         },
     },
     "get_team_efficiency": {
         "name": "get_team_efficiency",
-        "description": "Get Used%, Utilization%, and waste gap for a specific team. Use to answer questions like 'how efficient is ML Platform?' or 'is Engineering wasting GPUs?'",
+        "description": "Get Used%, Utilization%, and waste gap for a team.",
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -331,13 +452,13 @@ TOOL_SCHEMAS = {
     },
     "get_waste_analysis": {
         "name": "get_waste_analysis",
-        "description": "Find teams and GPU type combinations with high waste (allocated but underutilized). Use to answer 'who is wasting GPUs?' or 'where is the biggest inefficiency?'",
+        "description": "Find GPU allocations with high waste.",
         "inputSchema": {
             "type": "object",
             "properties": {
                 "min_waste_pct": {
                     "type": "number",
-                    "description": "Minimum waste gap percentage threshold (default 25). Lower values return more results.",
+                    "description": "Minimum waste gap percentage threshold (default 25).",
                     "default": 25,
                 },
             },
@@ -345,7 +466,7 @@ TOOL_SCHEMAS = {
     },
     "get_peak_hours": {
         "name": "get_peak_hours",
-        "description": "Find hours and days with highest GPU usage, and the best times to schedule jobs. Use to answer 'when are peak hours?' or 'when should I run my batch job?'",
+        "description": "Find hours/days with highest GPU usage and best scheduling times.",
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -356,7 +477,7 @@ TOOL_SCHEMAS = {
     },
     "get_weekend_usage": {
         "name": "get_weekend_usage",
-        "description": "Get Saturday and Sunday GPU utilization by team. Use to answer 'are GPUs idle on weekends?' or 'which teams work weekends?'",
+        "description": "Get Saturday/Sunday GPU utilization.",
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -367,7 +488,7 @@ TOOL_SCHEMAS = {
     },
     "get_trend": {
         "name": "get_trend",
-        "description": "Get 30-day trend for utilization or allocation. Use to answer 'is utilization going up?' or 'how has usage changed?'",
+        "description": "Get 30-day utilization or allocation trend.",
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -383,12 +504,47 @@ TOOL_SCHEMAS = {
     },
     "get_cloud_distribution": {
         "name": "get_cloud_distribution",
-        "description": "Get GPU distribution across cloud providers. Use to answer 'where are our A100s?' or 'how many GPUs in GCP?'",
+        "description": "Get GPU distribution across cloud providers.",
         "inputSchema": {
             "type": "object",
             "properties": {
                 "team": {"type": "string", "description": "Filter by team", "enum": TEAMS},
                 "gpu_type": {"type": "string", "description": "Filter by GPU type", "enum": GPU_TYPES},
+            },
+        },
+    },
+    "get_queue_status": {
+        "name": "get_queue_status",
+        "description": "Get current Kueue queue status — pending workloads, admitted workloads, queue depth. Use to answer 'why is my job pending?' or 'is the queue busy?'",
+        "inputSchema": {
+            "type": "object",
+            "properties": {},
+        },
+    },
+    "get_workload_status": {
+        "name": "get_workload_status",
+        "description": "Get status of Kueue workloads — running, pending, preempted. Use to answer 'why is my job failing?' or 'what happened to my workload?'",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "namespace": {
+                    "type": "string",
+                    "description": "Filter by team namespace",
+                    "enum": ["team-alpha", "team-beta", "gpuaas-demo"],
+                },
+            },
+        },
+    },
+    "get_gpu_health": {
+        "name": "get_gpu_health",
+        "description": "Get real-time GPU health — temperature, power, memory, utilization per GPU. Use to answer 'are GPUs healthy?' or 'is any GPU overheating?'",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "node": {
+                    "type": "string",
+                    "description": "Filter by node hostname",
+                },
             },
         },
     },

@@ -4,11 +4,11 @@ Executive GPU Dashboard
 Leadership-ready organizational view of GPU capacity and efficiency.
 
 Focus: Committed GPUs only
-Scope: Cross-cluster, multi-cloud aggregation
+Scope: Single cluster (mid-chatbot), real data from Thanos + K8s API
 Audience: Directors, FinOps, Platform Leadership
-
-In production, data would come from Prometheus/Thanos metrics.
 """
+
+import os
 
 import streamlit as st
 import pandas as pd
@@ -18,8 +18,11 @@ import plotly.graph_objects as go
 from datetime import datetime, timedelta
 
 import gpu_tools
+import data_live
 from chat_ui import render_gpu_assistant
 from user_view import render_user_view
+
+DATA_SOURCE = os.environ.get("DATA_SOURCE", "live")
 
 # ============================================================================
 # PAGE CONFIG
@@ -46,175 +49,80 @@ CLOUD_COLORS = {
 # DATA SIMULATION
 # ============================================================================
 
-@st.cache_data
-def generate_all_gpu_data():
-    """
-    Simulate GPU data across all workload types (committed, on-demand, spot).
-    In production: Query Prometheus for GPU metrics with workload_type labels.
-    """
+@st.cache_data(ttl=60)
+def load_gpu_inventory():
+    """Fetch live GPU inventory from cluster or fall back to mock."""
+    if DATA_SOURCE == "live":
+        return data_live.fetch_gpu_inventory()
+    return _mock_gpu_data()
+
+
+@st.cache_data(ttl=300)
+def load_timeseries():
+    """Fetch 30-day timeseries from cluster or fall back to mock."""
+    if DATA_SOURCE == "live":
+        return data_live.fetch_timeseries()
+    return _mock_timeseries()
+
+
+@st.cache_data(ttl=300)
+def load_hourly_patterns():
+    """Fetch hourly patterns from cluster or fall back to mock."""
+    if DATA_SOURCE == "live":
+        return data_live.fetch_hourly_patterns()
+    return _mock_hourly()
+
+
+def _mock_gpu_data():
     np.random.seed(42)
-    
-    clouds = ["AWS", "GCP", "IBM Cloud"]
-    gpu_types = ["L4", "T4", "A100-40GB", "A100-80GB", "H100", "H200", "B200"]
-    teams = ["ML Platform", "AI Research", "Data Science", "Engineering", "Customer Analytics"]
-    workload_types = ["committed", "on-demand", "spot"]
-    
-    # GPU type availability weights (some GPUs rarer than others)
-    gpu_weights = {
-        "L4": 1.0,
-        "T4": 1.0,
-        "A100-40GB": 0.8,
-        "A100-80GB": 0.7,
-        "H100": 0.5,
-        "H200": 0.3,
-        "B200": 0.2
-    }
-    
+    teams = ["team-alpha", "team-beta", "llama-stack-rag", "gpuaas-demo"]
     data = []
-    
-    for cloud in clouds:
-        for gpu_type in gpu_types:
-            # Skip some GPU types in some clouds for realism
-            if np.random.random() > gpu_weights[gpu_type]:
-                continue
-                
-            for team in teams:
-                for workload_type in workload_types:
-                    # Smaller numbers, more realistic
-                    if gpu_type in ["L4", "T4"]:
-                        num_gpus = np.random.randint(4, 16)
-                    elif gpu_type in ["A100-40GB", "A100-80GB"]:
-                        num_gpus = np.random.randint(2, 12)
-                    elif gpu_type == "H100":
-                        num_gpus = np.random.randint(1, 8)
-                    elif gpu_type == "H200":
-                        num_gpus = np.random.randint(1, 6)
-                    else:  # B200
-                        num_gpus = np.random.randint(1, 4)
-                    
-                    # Allocation based on workload type
-                    if workload_type == "committed":
-                        # Committed: 60-85% used (NOT 100%)
-                        allocated = int(num_gpus * np.random.uniform(0.6, 0.85))
-                        utilization = np.random.uniform(30, 75)
-                    elif workload_type == "on-demand":
-                        # On-demand: 95-100% used
-                        allocated = int(num_gpus * np.random.uniform(0.95, 1.0))
-                        utilization = np.random.uniform(40, 80)
-                    else:  # spot
-                        # Spot: 95-100% used
-                        allocated = int(num_gpus * np.random.uniform(0.95, 1.0))
-                        utilization = np.random.uniform(50, 85)
-                    
-                    used_pct = (allocated / num_gpus) * 100
-                    idle_pct = 100 - used_pct
-                    
-                    data.append({
-                        "cloud": cloud,
-                        "gpu_type": gpu_type,
-                        "team": team,
-                        "workload_type": workload_type,
-                        "total_gpus": num_gpus,
-                        "allocated_gpus": allocated,
-                        "used_pct": used_pct,
-                        "utilization_pct": utilization,
-                        "idle_pct": idle_pct
-                    })
-    
+    for team in teams:
+        alloc = np.random.randint(0, 3)
+        util = np.random.uniform(10, 60) if alloc > 0 else 0.0
+        used_pct = alloc / 8 * 100
+        data.append({
+            "cloud": "AWS", "gpu_type": "NVIDIA A10G", "team": team,
+            "workload_type": "committed", "total_gpus": 8,
+            "allocated_gpus": alloc, "used_pct": round(used_pct, 1),
+            "utilization_pct": round(util, 1), "idle_pct": round(100 - used_pct, 1),
+        })
     return pd.DataFrame(data)
 
 
-@st.cache_data
-def generate_30day_timeseries():
-    """
-    Simulate 30 days of daily organizational metrics by workload type.
-    In production: Query Prometheus range queries for historical data.
-    """
+def _mock_timeseries():
     np.random.seed(45)
-    
-    end_date = datetime.now()
-    start_date = end_date - timedelta(days=30)
-    
-    dates = pd.date_range(start=start_date, end=end_date, freq='D')
-    workload_types = ["committed", "on-demand", "spot"]
-    
+    dates = pd.date_range(end=datetime.now(), periods=31, freq="D")
     data = []
     for date in dates:
-        day_of_week = date.dayofweek  # 0=Monday, 6=Sunday
-        weekend_factor = 0.6 if day_of_week >= 5 else 1.0
-        
-        for workload_type in workload_types:
-            if workload_type == "committed":
-                # Committed: 60-75% used
-                used_pct = np.random.uniform(60, 75) * weekend_factor
-                utilization_pct = np.random.uniform(35, 55) * weekend_factor
-            elif workload_type == "on-demand":
-                # On-demand: ~100% used
-                used_pct = np.random.uniform(95, 100)
-                utilization_pct = np.random.uniform(45, 65) * weekend_factor
-            else:  # spot
-                # Spot: ~100% used
-                used_pct = np.random.uniform(95, 100)
-                utilization_pct = np.random.uniform(50, 70) * weekend_factor
-            
+        dow = date.dayofweek
+        wf = 0.7 if dow >= 5 else 1.0
+        for wl in ["committed", "spot"]:
             data.append({
-                "date": date,
-                "workload_type": workload_type,
-                "used_pct": used_pct,
-                "utilization_pct": utilization_pct,
-                "day_of_week": day_of_week
+                "date": date, "workload_type": wl,
+                "used_pct": round(np.random.uniform(10, 40) * wf, 1),
+                "utilization_pct": round(np.random.uniform(5, 30) * wf, 1),
+                "day_of_week": dow,
             })
-    
     return pd.DataFrame(data)
 
 
-@st.cache_data
-def generate_hourly_usage_patterns():
-    """
-    Simulate hourly usage patterns by team and GPU type.
-    In production: Query Prometheus for hourly GPU metrics.
-    """
+def _mock_hourly():
     np.random.seed(100)
-    
-    teams = ["ML Platform", "AI Research", "Data Science", "Engineering", "Customer Analytics"]
-    gpu_types = ["L4", "T4", "A100-40GB", "A100-80GB", "H100", "H200", "B200"]
-    
+    teams = ["team-alpha", "team-beta", "llama-stack-rag", "gpuaas-demo"]
     data = []
-    
-    for day_of_week in range(7):  # 0=Monday, 6=Sunday
+    for dow in range(7):
         for hour in range(24):
             for team in teams:
-                for gpu_type in gpu_types:
-                    # Simulate hourly patterns
-                    # Work hours (9-17) have higher usage
-                    is_work_hours = 9 <= hour <= 17
-                    is_weekday = day_of_week < 5
-                    
-                    # Base GPU hours and utilization
-                    if is_weekday and is_work_hours:
-                        base_gpu_hours = np.random.uniform(80, 150)
-                        base_utilization = np.random.uniform(50, 75)
-                    elif is_weekday:
-                        base_gpu_hours = np.random.uniform(40, 80)
-                        base_utilization = np.random.uniform(30, 50)
-                    else:  # weekend
-                        base_gpu_hours = np.random.uniform(20, 60)
-                        base_utilization = np.random.uniform(20, 40)
-                    
-                    # Add team-specific variance
-                    team_factor = 1.0 + (hash(team) % 30) / 100
-                    gpu_hours = base_gpu_hours * team_factor
-                    utilization = base_utilization * team_factor
-                    
-                    data.append({
-                        "team": team,
-                        "gpu_type": gpu_type,
-                        "day_of_week": day_of_week,
-                        "hour": hour,
-                        "gpu_hours": gpu_hours,
-                        "utilization_pct": min(85, utilization)
-                    })
-    
+                wh = 9 <= hour <= 17
+                wd = dow < 5
+                scale = 1.0 if (wd and wh) else 0.5 if wd else 0.3
+                data.append({
+                    "team": team, "gpu_type": "NVIDIA A10G",
+                    "day_of_week": dow, "hour": hour,
+                    "gpu_hours": round(np.random.uniform(5, 30) * scale, 1),
+                    "utilization_pct": round(np.random.uniform(5, 40) * scale, 1),
+                })
     return pd.DataFrame(data)
 
 
@@ -1230,10 +1138,10 @@ def plot_team_by_weekday_heatmap(filtered_df, timeseries_df):
 # ============================================================================
 
 def main():
-    # Load data
-    all_gpu_df = generate_all_gpu_data()
-    timeseries_df = generate_30day_timeseries()
-    hourly_patterns_df = generate_hourly_usage_patterns()
+    # Load data (live or mock depending on DATA_SOURCE)
+    all_gpu_df = load_gpu_inventory()
+    timeseries_df = load_timeseries()
+    hourly_patterns_df = load_hourly_patterns()
 
     # Initialize GPU tools for chatbot
     gpu_tools.init(all_gpu_df, timeseries_df, hourly_patterns_df)
@@ -1533,8 +1441,9 @@ def main():
     st.markdown("---")
     
     # Footer
-    st.caption("""
-    📊 **Executive GPU Dashboard** | Source: Prometheus/Thanos (simulated)  
+    source = "Thanos + K8s API (live)" if DATA_SOURCE == "live" else "Mock data"
+    st.caption(f"""
+    📊 **Executive GPU Dashboard** | Source: {source} | Cluster: mid-chatbot
     Focus: Capacity · Efficiency · Ownership · Time Patterns
     """)
 
