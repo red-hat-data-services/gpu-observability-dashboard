@@ -64,11 +64,19 @@ Key concepts:
 # ── Example prompts — both end-user and executive ────────────────────
 
 EXAMPLE_CATEGORIES = {
-    "Scheduling": [
+    "Scheduling & Jobs": [
         "When should I schedule my batch job?",
-        "What are the peak GPU usage hours?",
         "Best time to run a training job on A10G?",
         "Is the weekend a good time for long jobs?",
+        "Which GPUs are most oversubscribed?",
+    ],
+    "My Workloads": [
+        "Is my job running?",
+        "Why is my job pending?",
+        "Is the queue busy right now?",
+        "What workloads are running?",
+        "Are there preemption risks for my spot workload?",
+        "What happened to my workload?",
     ],
     "My Team": [
         "How efficient is team-alpha?",
@@ -76,22 +84,16 @@ EXAMPLE_CATEGORIES = {
         "Which team is wasting the most GPUs?",
         "Compare team-alpha vs team-beta efficiency",
     ],
-    "Troubleshooting": [
-        "Why is my job pending?",
-        "Is the queue busy right now?",
-        "Are there preemption risks for my spot workload?",
-        "What's the current GPU temperature?",
-    ],
-    "Capacity & Health": [
-        "How many GPUs do we have total?",
+    "GPU Health": [
         "Are GPUs healthy?",
+        "What's the current GPU temperature?",
         "Is any GPU overheating?",
-        "What's the overall utilization trend?",
+        "How many GPUs do we have total?",
     ],
-    "Trends": [
+    "Trends & Capacity": [
         "Is GPU utilization trending up or down?",
         "What's the waste gap this month?",
-        "Are GPUs idle at night?",
+        "Should we add more A10G capacity?",
         "Where is the biggest GPU bottleneck?",
     ],
 }
