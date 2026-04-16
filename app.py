@@ -1146,28 +1146,12 @@ def main():
     # Initialize GPU tools for chatbot
     gpu_tools.init(all_gpu_df, timeseries_df, hourly_patterns_df)
 
-    # ── Page Navigation ──────────────────────────────────────────────
-    page = st.radio(
-        "View",
-        ["GPU Assistant", "My GPUs", "Executive Dashboard"],
-        index=0,
-        horizontal=True,
-        label_visibility="collapsed",
-    )
-
-    if page == "GPU Assistant":
-        st.title("GPU Assistant")
-        st.caption("Ask questions about GPU usage, scheduling, efficiency, and costs — powered by LlamaStack")
-        st.markdown("---")
-        render_gpu_assistant()
-        return
-
-    if page == "My GPUs":
-        st.title("My GPU Dashboard")
-        st.markdown("**Your team's GPU usage, scheduling, and efficiency**")
-        st.markdown("---")
-        render_user_view(all_gpu_df, timeseries_df, hourly_patterns_df)
-        return
+    # ── GPU Assistant (single view) ────────────────────────────────
+    st.title("GPU Assistant")
+    st.caption("Ask questions about GPU usage, scheduling, efficiency, and costs — powered by LlamaStack")
+    st.markdown("---")
+    render_gpu_assistant()
+    return
 
     # ── Executive Dashboard (original) ───────────────────────────────
     st.title("Executive GPU Dashboard")

@@ -544,11 +544,11 @@ def _call_llamastack(user_message: str) -> tuple[str, go.Figure | None]:
 
 
 # ══════════════════════════════════════════════════════════════════════
-# MAIN RENDER — Chat left, Chart right
+# MAIN RENDER — Input → Answer → Chart (vertical flow)
 # ══════════════════════════════════════════════════════════════════════
 
 def render_gpu_assistant():
-    """Render the full GPU Assistant page — chat left, chart right."""
+    """Render the GPU Assistant page — input at top, answer + chart below."""
 
     # Init state
     if "chat_messages" not in st.session_state:
@@ -556,59 +556,77 @@ def render_gpu_assistant():
     if "last_chart" not in st.session_state:
         st.session_state.last_chart = None
 
-    # ── Layout: left = chat, right = chart ───────────────────────────
-    chat_col, chart_col = st.columns([2, 3])
+    # ── Input bar ───────────────────────────────────────────────────
+    pending = st.session_state.pop("_pending_prompt", None)
+    typed = st.chat_input("Ask about GPUs...", key="gpu_chat_input")
+    prompt = pending or typed
 
-    with chart_col:
-        st.markdown("#### Visualization")
-        if st.session_state.last_chart is not None:
-            st.plotly_chart(st.session_state.last_chart, use_container_width=True, key="main_chart")
-        else:
-            # Default empty state
+    if prompt:
+        st.session_state.chat_messages.append({"role": "user", "content": prompt})
+
+        try:
+            response_text, chart = _call_llamastack(prompt)
+        except Exception:
+            response_text, chart = _call_direct(prompt)
+
+        st.session_state.chat_messages.append({"role": "assistant", "content": response_text})
+
+        if chart is not None:
+            st.session_state.last_chart = chart
+
+        st.rerun()
+
+    # ── Latest answer + chart (prominent) ───────────────────────────
+    if st.session_state.chat_messages:
+        # Find last user question + assistant answer
+        messages = st.session_state.chat_messages
+        last_user = None
+        last_assistant = None
+        for msg in reversed(messages):
+            if msg["role"] == "assistant" and last_assistant is None:
+                last_assistant = msg["content"]
+            elif msg["role"] == "user" and last_user is None:
+                last_user = msg["content"]
+            if last_user and last_assistant:
+                break
+
+        if last_user:
             st.markdown(
-                '<div style="display:flex; align-items:center; justify-content:center; '
-                'height:400px; border:1px dashed #444; border-radius:12px; color:#666; font-size:1.1em;">'
-                'Ask a question to generate a chart</div>',
+                f'<div style="background:#1a1a2e;border-radius:8px;padding:10px 16px;margin-bottom:8px">'
+                f'<span style="color:#9ca3af;font-size:0.85em">You asked:</span><br>'
+                f'<span style="font-size:1.05em">{last_user}</span></div>',
                 unsafe_allow_html=True,
             )
 
-    with chat_col:
-        st.markdown("#### Chat")
+        if last_assistant:
+            st.markdown(
+                f'<div style="background:#0f2027;border-left:3px solid #2ca02c;'
+                f'border-radius:6px;padding:12px 18px;margin-bottom:12px">'
+                f'{last_assistant}</div>',
+                unsafe_allow_html=True,
+            )
 
-        # Example prompts
-        with st.expander("Example questions", expanded=len(st.session_state.chat_messages) == 0):
-            for category, prompts in EXAMPLE_CATEGORIES.items():
-                st.markdown(f"**{category}**")
-                cols = st.columns(2)
-                for i, prompt_text in enumerate(prompts):
-                    with cols[i % 2]:
-                        if st.button(prompt_text, key=f"ex_{hash(prompt_text)}", use_container_width=True):
-                            st.session_state["_pending_prompt"] = prompt_text
-                            st.rerun()
+        # Chart
+        if st.session_state.last_chart is not None:
+            st.plotly_chart(st.session_state.last_chart, use_container_width=True, key="main_chart")
 
-        # Chat history
-        chat_container = st.container(height=420)
-        with chat_container:
-            for msg in st.session_state.chat_messages:
-                with st.chat_message(msg["role"]):
-                    st.markdown(msg["content"])
+        # Previous conversation (collapsed)
+        if len(messages) > 2:
+            with st.expander(f"Conversation history ({len(messages) // 2} exchanges)"):
+                # Show all except the last exchange (already shown above)
+                for msg in messages[:-2]:
+                    with st.chat_message(msg["role"]):
+                        st.markdown(msg["content"])
 
-        # Input
-        pending = st.session_state.pop("_pending_prompt", None)
-        typed = st.chat_input("Ask about GPUs...", key="gpu_chat_input")
-        prompt = pending or typed
-
-        if prompt:
-            st.session_state.chat_messages.append({"role": "user", "content": prompt})
-
-            try:
-                response_text, chart = _call_llamastack(prompt)
-            except Exception:
-                response_text, chart = _call_direct(prompt)
-
-            st.session_state.chat_messages.append({"role": "assistant", "content": response_text})
-
-            if chart is not None:
-                st.session_state.last_chart = chart
-
-            st.rerun()
+    else:
+        # ── No conversation yet — show example prompts ──────────────
+        st.markdown("")
+        for category, prompts in EXAMPLE_CATEGORIES.items():
+            st.markdown(f"**{category}**")
+            cols = st.columns(3)
+            for i, prompt_text in enumerate(prompts):
+                with cols[i % 3]:
+                    if st.button(prompt_text, key=f"ex_{hash(prompt_text)}", use_container_width=True):
+                        st.session_state["_pending_prompt"] = prompt_text
+                        st.rerun()
+            st.markdown("")
