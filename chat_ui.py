@@ -547,8 +547,20 @@ def _call_llamastack(user_message: str) -> tuple[str, go.Figure | None]:
 # MAIN RENDER — Input → Answer → Chart (vertical flow)
 # ══════════════════════════════════════════════════════════════════════
 
+def _render_suggested_questions():
+    """Render suggested questions as clickable buttons."""
+    st.markdown("#### Try asking")
+    for category, prompts in EXAMPLE_CATEGORIES.items():
+        st.markdown(f"**{category}**")
+        for prompt_text in prompts:
+            if st.button(prompt_text, key=f"ex_{hash(prompt_text)}", use_container_width=True):
+                st.session_state["_pending_prompt"] = prompt_text
+                st.rerun()
+        st.markdown("")
+
+
 def render_gpu_assistant():
-    """Render the GPU Assistant page — input at top, answer + chart below."""
+    """Render the GPU Assistant page — left: answer+chart, right: suggested questions."""
 
     # Init state
     if "chat_messages" not in st.session_state:
@@ -576,57 +588,58 @@ def render_gpu_assistant():
 
         st.rerun()
 
-    # ── Latest answer + chart (prominent) ───────────────────────────
-    if st.session_state.chat_messages:
-        # Find last user question + assistant answer
-        messages = st.session_state.chat_messages
-        last_user = None
-        last_assistant = None
-        for msg in reversed(messages):
-            if msg["role"] == "assistant" and last_assistant is None:
-                last_assistant = msg["content"]
-            elif msg["role"] == "user" and last_user is None:
-                last_user = msg["content"]
-            if last_user and last_assistant:
-                break
+    # ── Two-column layout: left = answer + chart, right = suggestions ─
+    main_col, suggest_col = st.columns([3, 1])
 
-        if last_user:
+    with suggest_col:
+        _render_suggested_questions()
+
+    with main_col:
+        if st.session_state.chat_messages:
+            # Find last user question + assistant answer
+            messages = st.session_state.chat_messages
+            last_user = None
+            last_assistant = None
+            for msg in reversed(messages):
+                if msg["role"] == "assistant" and last_assistant is None:
+                    last_assistant = msg["content"]
+                elif msg["role"] == "user" and last_user is None:
+                    last_user = msg["content"]
+                if last_user and last_assistant:
+                    break
+
+            if last_user:
+                st.markdown(
+                    f'<div style="background:#1a1a2e;border-radius:8px;padding:10px 16px;margin-bottom:8px">'
+                    f'<span style="color:#9ca3af;font-size:0.85em">You asked:</span><br>'
+                    f'<span style="font-size:1.05em">{last_user}</span></div>',
+                    unsafe_allow_html=True,
+                )
+
+            if last_assistant:
+                st.markdown(
+                    f'<div style="background:#0f2027;border-left:3px solid #2ca02c;'
+                    f'border-radius:6px;padding:12px 18px;margin-bottom:12px">'
+                    f'{last_assistant}</div>',
+                    unsafe_allow_html=True,
+                )
+
+            # Chart
+            if st.session_state.last_chart is not None:
+                st.plotly_chart(st.session_state.last_chart, use_container_width=True, key="main_chart")
+
+            # Previous conversation (collapsed)
+            if len(messages) > 2:
+                with st.expander(f"Conversation history ({len(messages) // 2} exchanges)"):
+                    for msg in messages[:-2]:
+                        with st.chat_message(msg["role"]):
+                            st.markdown(msg["content"])
+
+        else:
+            # Empty state
             st.markdown(
-                f'<div style="background:#1a1a2e;border-radius:8px;padding:10px 16px;margin-bottom:8px">'
-                f'<span style="color:#9ca3af;font-size:0.85em">You asked:</span><br>'
-                f'<span style="font-size:1.05em">{last_user}</span></div>',
+                '<div style="display:flex;align-items:center;justify-content:center;'
+                'height:300px;border:1px dashed #444;border-radius:12px;color:#666;font-size:1.1em">'
+                'Ask a question or click a suggestion to get started</div>',
                 unsafe_allow_html=True,
             )
-
-        if last_assistant:
-            st.markdown(
-                f'<div style="background:#0f2027;border-left:3px solid #2ca02c;'
-                f'border-radius:6px;padding:12px 18px;margin-bottom:12px">'
-                f'{last_assistant}</div>',
-                unsafe_allow_html=True,
-            )
-
-        # Chart
-        if st.session_state.last_chart is not None:
-            st.plotly_chart(st.session_state.last_chart, use_container_width=True, key="main_chart")
-
-        # Previous conversation (collapsed)
-        if len(messages) > 2:
-            with st.expander(f"Conversation history ({len(messages) // 2} exchanges)"):
-                # Show all except the last exchange (already shown above)
-                for msg in messages[:-2]:
-                    with st.chat_message(msg["role"]):
-                        st.markdown(msg["content"])
-
-    else:
-        # ── No conversation yet — show example prompts ──────────────
-        st.markdown("")
-        for category, prompts in EXAMPLE_CATEGORIES.items():
-            st.markdown(f"**{category}**")
-            cols = st.columns(3)
-            for i, prompt_text in enumerate(prompts):
-                with cols[i % 3]:
-                    if st.button(prompt_text, key=f"ex_{hash(prompt_text)}", use_container_width=True):
-                        st.session_state["_pending_prompt"] = prompt_text
-                        st.rerun()
-            st.markdown("")
