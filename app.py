@@ -21,6 +21,7 @@ import gpu_tools
 import data_live
 from chat_ui import render_gpu_assistant
 from user_view import render_user_view
+from demo_runner import render_demo_panel
 
 DATA_SOURCE = os.environ.get("DATA_SOURCE", "live")
 
@@ -1150,6 +1151,10 @@ def main():
     st.title("GPU Assistant")
     st.caption("Ask questions about GPU usage, scheduling, efficiency, and costs — powered by LlamaStack")
     st.markdown("---")
+
+    # Demo runner in sidebar
+    render_demo_panel()
+
     render_gpu_assistant()
     return
 

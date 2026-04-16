@@ -5,7 +5,7 @@ WORKDIR /opt/app-root/src
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY app.py chat_ui.py gpu_tools.py mcp_server.py user_view.py data_live.py ./
+COPY app.py chat_ui.py gpu_tools.py mcp_server.py user_view.py data_live.py demo_runner.py ./
 
 # Streamlit config — ensure .streamlit dir is writable for arbitrary UIDs (OpenShift)
 RUN mkdir -p $HOME/.streamlit && \
