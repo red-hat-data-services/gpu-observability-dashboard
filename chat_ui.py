@@ -34,6 +34,8 @@ KEYWORD_TOOL_MAP = [
 TEAM_NAMES = {
     "team-alpha": "team-alpha", "team alpha": "team-alpha", "alpha": "team-alpha",
     "team-beta": "team-beta", "team beta": "team-beta", "beta": "team-beta",
+    "team-gamma": "team-gamma", "team gamma": "team-gamma", "gamma": "team-gamma",
+    "team-delta": "team-delta", "team delta": "team-delta", "delta": "team-delta",
     "llama": "llama-stack-rag", "llama-stack": "llama-stack-rag",
     "gpuaas": "gpuaas-demo", "demo": "gpuaas-demo",
 }

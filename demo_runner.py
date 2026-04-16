@@ -169,36 +169,78 @@ def _get_recent_events(namespace: str, limit: int = 15) -> list[dict]:
 # Test scenarios
 # ---------------------------------------------------------------------------
 
+_ALL_TEAMS = [
+    ("team-alpha", "team-alpha-queue", "high-priority"),
+    ("team-beta", "team-beta-queue", "low-priority"),
+    ("team-gamma", "team-gamma-queue", "high-priority"),
+    ("team-delta", "team-delta-queue", "low-priority"),
+]
+
 SCENARIOS = {
-    "P1 job → team-alpha": {
-        "description": "Submit 1 high-priority job (1 GPU) to team-alpha",
+    "1 job per team": {
+        "description": "Submit 1 GPU job to each of the 4 teams (4 jobs total, fills quota)",
+        "jobs": [
+            {"name": "demo-alpha-{ts}", "namespace": "team-alpha",
+             "queue": "team-alpha-queue", "priority": "high-priority", "gpus": 1},
+            {"name": "demo-beta-{ts}", "namespace": "team-beta",
+             "queue": "team-beta-queue", "priority": "low-priority", "gpus": 1},
+            {"name": "demo-gamma-{ts}", "namespace": "team-gamma",
+             "queue": "team-gamma-queue", "priority": "high-priority", "gpus": 1},
+            {"name": "demo-delta-{ts}", "namespace": "team-delta",
+             "queue": "team-delta-queue", "priority": "low-priority", "gpus": 1},
+        ],
+    },
+    "2 P1 + 2 P2 jobs": {
+        "description": "Alpha & Gamma get P1 jobs, Beta & Delta get P2 jobs (4 jobs)",
         "jobs": [
             {"name": "demo-p1-alpha-{ts}", "namespace": "team-alpha",
              "queue": "team-alpha-queue", "priority": "high-priority", "gpus": 1},
-        ],
-    },
-    "P2 job → team-beta": {
-        "description": "Submit 1 low-priority job (1 GPU) to team-beta",
-        "jobs": [
+            {"name": "demo-p1-gamma-{ts}", "namespace": "team-gamma",
+             "queue": "team-gamma-queue", "priority": "high-priority", "gpus": 1},
             {"name": "demo-p2-beta-{ts}", "namespace": "team-beta",
              "queue": "team-beta-queue", "priority": "low-priority", "gpus": 1},
+            {"name": "demo-p2-delta-{ts}", "namespace": "team-delta",
+             "queue": "team-delta-queue", "priority": "low-priority", "gpus": 1},
+        ],
+    },
+    "Overflow → pending": {
+        "description": "Submit 6 jobs across teams — quota is 4, so 2 stay pending",
+        "jobs": [
+            {"name": "demo-fill-a1-{ts}", "namespace": "team-alpha",
+             "queue": "team-alpha-queue", "priority": "high-priority", "gpus": 1},
+            {"name": "demo-fill-a2-{ts}", "namespace": "team-alpha",
+             "queue": "team-alpha-queue", "priority": "high-priority", "gpus": 1},
+            {"name": "demo-fill-b1-{ts}", "namespace": "team-beta",
+             "queue": "team-beta-queue", "priority": "low-priority", "gpus": 1},
+            {"name": "demo-fill-g1-{ts}", "namespace": "team-gamma",
+             "queue": "team-gamma-queue", "priority": "high-priority", "gpus": 1},
+            {"name": "demo-fill-g2-{ts}", "namespace": "team-gamma",
+             "queue": "team-gamma-queue", "priority": "high-priority", "gpus": 1},
+            {"name": "demo-fill-d1-{ts}", "namespace": "team-delta",
+             "queue": "team-delta-queue", "priority": "low-priority", "gpus": 1},
         ],
     },
     "Preemption test": {
-        "description": "Submit P2 to team-beta first, then P1 to team-alpha — P1 should preempt P2",
+        "description": "Fill 4 GPUs with P2 jobs, then submit 2 P1 jobs — P1 preempts P2",
         "jobs": [
-            {"name": "demo-victim-{ts}", "namespace": "team-beta",
+            {"name": "demo-victim-b1-{ts}", "namespace": "team-beta",
              "queue": "team-beta-queue", "priority": "low-priority", "gpus": 1},
-            {"name": "demo-preempt-{ts}", "namespace": "team-alpha",
-             "queue": "team-alpha-queue", "priority": "high-priority", "gpus": 1, "delay": 5},
+            {"name": "demo-victim-b2-{ts}", "namespace": "team-beta",
+             "queue": "team-beta-queue", "priority": "low-priority", "gpus": 1},
+            {"name": "demo-victim-d1-{ts}", "namespace": "team-delta",
+             "queue": "team-delta-queue", "priority": "low-priority", "gpus": 1},
+            {"name": "demo-victim-d2-{ts}", "namespace": "team-delta",
+             "queue": "team-delta-queue", "priority": "low-priority", "gpus": 1},
+            {"name": "demo-preempt-a1-{ts}", "namespace": "team-alpha",
+             "queue": "team-alpha-queue", "priority": "high-priority", "gpus": 1, "delay": 8},
+            {"name": "demo-preempt-g1-{ts}", "namespace": "team-gamma",
+             "queue": "team-gamma-queue", "priority": "high-priority", "gpus": 1},
         ],
     },
-    "Fill queue": {
-        "description": "Submit 2 jobs to team-alpha — second should stay pending (quota=1)",
+    "Single P1 job": {
+        "description": "Submit 1 high-priority job to team-alpha",
         "jobs": [
-            {"name": "demo-fill-1-{ts}", "namespace": "team-alpha",
-             "queue": "team-alpha-queue", "priority": "high-priority", "gpus": 1},
-            {"name": "demo-fill-2-{ts}", "namespace": "team-alpha",
+            {"name": "demo-single-{ts}", "namespace": "team-alpha",
              "queue": "team-alpha-queue", "priority": "high-priority", "gpus": 1},
         ],
     },
@@ -249,7 +291,7 @@ def render_demo_panel():
     st.sidebar.markdown("---")
     if st.sidebar.button("Clean up all demo jobs", key="demo_cleanup"):
         log_lines = []
-        for ns in ["team-alpha", "team-beta"]:
+        for ns in ["team-alpha", "team-beta", "team-gamma", "team-delta"]:
             results = _delete_demo_jobs(ns)
             log_lines.extend(f"{datetime.now().strftime('%H:%M:%S')} {r}" for r in results)
         if not log_lines:
@@ -275,8 +317,8 @@ def render_demo_panel():
     st.sidebar.markdown("---")
     st.sidebar.markdown("#### Recent Events")
     all_events = []
-    for ns in ["team-alpha", "team-beta"]:
-        all_events.extend(_get_recent_events(ns, limit=8))
+    for ns in ["team-alpha", "team-beta", "team-gamma", "team-delta"]:
+        all_events.extend(_get_recent_events(ns, limit=5))
     all_events.sort(key=lambda e: e["time"], reverse=True)
 
     if all_events:

@@ -258,7 +258,7 @@ def fetch_gpu_inventory() -> pd.DataFrame:
     gpu_type = next(iter(node_info.values()), {}).get("gpu_type", "NVIDIA A10G")
 
     # 2) Pods requesting GPUs
-    gpu_namespaces = ["team-alpha", "team-beta", "llama-stack-rag", "gpuaas-demo"]
+    gpu_namespaces = ["team-alpha", "team-beta", "team-gamma", "team-delta", "llama-stack-rag", "gpuaas-demo"]
     allocated_by_ns: dict[str, int] = {}
 
     for ns in gpu_namespaces:
@@ -429,7 +429,7 @@ def fetch_hourly_patterns() -> pd.DataFrame:
         current_util = sum(utils) / len(utils) if utils else 0.0
 
     gpu_type = "NVIDIA A10G"
-    teams = ["team-alpha", "team-beta", "llama-stack-rag", "gpuaas-demo"]
+    teams = ["team-alpha", "team-beta", "team-gamma", "team-delta", "llama-stack-rag", "gpuaas-demo"]
 
     np.random.seed(100)
     data = []

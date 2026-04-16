@@ -81,6 +81,12 @@ teams:
   - namespace: team-beta
     local_queue: team-beta-queue
     priority: low-priority (P2 = opportunistic)
+  - namespace: team-gamma
+    local_queue: team-gamma-queue
+    priority: high-priority (P1 = guaranteed)
+  - namespace: team-delta
+    local_queue: team-delta-queue
+    priority: low-priority (P2 = opportunistic)
 
 demo_namespace: gpuaas-demo
 ```

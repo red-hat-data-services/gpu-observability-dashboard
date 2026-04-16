@@ -18,7 +18,7 @@ _hourly_df: pd.DataFrame | None = None
 # Constants matching real cluster
 GPU_TYPES = ["NVIDIA A10G"]
 CLOUDS = ["AWS"]
-TEAMS = ["team-alpha", "team-beta", "llama-stack-rag", "gpuaas-demo"]
+TEAMS = ["team-alpha", "team-beta", "team-gamma", "team-delta", "llama-stack-rag", "gpuaas-demo"]
 WORKLOAD_TYPES = ["committed", "spot"]
 DAY_NAMES = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
 
@@ -530,7 +530,7 @@ TOOL_SCHEMAS = {
                 "namespace": {
                     "type": "string",
                     "description": "Filter by team namespace",
-                    "enum": ["team-alpha", "team-beta", "gpuaas-demo"],
+                    "enum": ["team-alpha", "team-beta", "team-gamma", "team-delta", "gpuaas-demo"],
                 },
             },
         },
