@@ -30,10 +30,10 @@ DATA_SOURCE = os.environ.get("DATA_SOURCE", "live")
 # ============================================================================
 
 st.set_page_config(
-    page_title="Executive GPU Dashboard",
+    page_title="GPU Assistant",
     page_icon="📊",
     layout="wide",
-    initial_sidebar_state="expanded"
+    initial_sidebar_state="collapsed"
 )
 
 # Dark theme for Plotly
