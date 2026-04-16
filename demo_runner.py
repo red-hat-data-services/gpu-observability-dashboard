@@ -267,10 +267,9 @@ def render_demo_panel():
         if st.sidebar.button(f"Run: {scenario_name}", key=f"demo_{hash(scenario_name)}"):
             log_lines = []
             for job_spec in scenario["jobs"]:
-                delay = job_spec.pop("delay", 0)
+                delay = job_spec.get("delay", 0)
                 if delay:
                     log_lines.append(f"Waiting {delay}s before next job...")
-                    st.session_state["demo_log"] = log_lines.copy()
                     time.sleep(delay)
 
                 name = job_spec["name"].format(ts=ts)
@@ -332,8 +331,11 @@ def render_demo_panel():
     else:
         st.sidebar.caption("No recent events")
 
-    # Auto-refresh implementation
+    # Auto-refresh using st.fragment / rerun with timer
     if auto_refresh:
-        time.sleep(10)
-        st.cache_data.clear()
-        st.rerun()
+        import streamlit.components.v1 as components
+        # Use JS-based auto-reload instead of blocking sleep
+        components.html(
+            '<script>setTimeout(function(){window.parent.location.reload()},10000)</script>',
+            height=0,
+        )
