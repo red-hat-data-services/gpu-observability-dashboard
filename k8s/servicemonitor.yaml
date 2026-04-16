@@ -1,0 +1,21 @@
+# Optional: Route DCGM metrics into Thanos via ServiceMonitor.
+# Not required for v2.0 — the dashboard scrapes DCGM exporter pods directly.
+# Apply this to enable Thanos-based historical queries in a future version.
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: dcgm-exporter
+  namespace: nvidia-gpu-operator
+  labels:
+    app: nvidia-dcgm-exporter
+spec:
+  selector:
+    matchLabels:
+      app: nvidia-dcgm-exporter
+  namespaceSelector:
+    matchNames:
+      - nvidia-gpu-operator
+  endpoints:
+    - port: gpu-metrics
+      interval: 15s
+      path: /metrics

@@ -1,0 +1,47 @@
+name: Spec Sync Check
+
+on:
+  push:
+    paths:
+      - "gpu_tools.py"
+      - "mcp_server.py"
+      - "SPEC.md"
+      - "scripts/check_spec.py"
+  pull_request:
+    paths:
+      - "gpu_tools.py"
+      - "mcp_server.py"
+      - "SPEC.md"
+      - "scripts/check_spec.py"
+
+jobs:
+  spec-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install pandas numpy
+
+      - name: Validate spec matches code
+        run: python scripts/check_spec.py
+
+      - name: Report blame on failure
+        if: failure()
+        run: |
+          echo ""
+          echo "========================================="
+          echo "SPEC.md is out of sync with code!"
+          echo "========================================="
+          echo ""
+          echo "Last changes to tool code:"
+          git log -1 --format='  %an <%ae> — %s (%cr)' -- gpu_tools.py mcp_server.py
+          echo ""
+          echo "Last changes to spec:"
+          git log -1 --format='  %an <%ae> — %s (%cr)' -- SPEC.md
+          echo ""
+          echo "Fix: update SPEC.md to match code (or vice versa), then push."
